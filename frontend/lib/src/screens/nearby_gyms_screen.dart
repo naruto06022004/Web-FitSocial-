@@ -1,22 +1,62 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher.dart' as url_launcher;
 
-/// Bản đồ demo + danh sách phòng tập gần bạn; mở Google Maps để xem thật.
-class NearbyGymsScreen extends StatelessWidget {
-  const NearbyGymsScreen({super.key});
+import '../api/api_client.dart';
+
+/// Bản đồ demo + danh sách phòng tập từ API; mở Google Maps để xem thật.
+/// Dùng làm `body` trong [FitnetChrome] hoặc trong [Scaffold.body].
+class NearbyGymsScreen extends StatefulWidget {
+  const NearbyGymsScreen({super.key, required this.api});
+
+  final ApiClient api;
 
   static const _fbBg = Color(0xFFF0F2F5);
 
-  static final List<_GymPin> _demoGyms = [
-    _GymPin('Fitnet Gym Quận 1', 0.22, 0.38, '≈ 0.8 km'),
-    _GymPin('California Fitness', 0.62, 0.28, '≈ 1.2 km'),
-    _GymPin('Gym Thể hình 247', 0.48, 0.62, '≈ 1.5 km'),
-    _GymPin('Iron Box', 0.75, 0.55, '≈ 2.1 km'),
-  ];
+  @override
+  State<NearbyGymsScreen> createState() => _NearbyGymsScreenState();
+}
+
+class _NearbyGymsScreenState extends State<NearbyGymsScreen> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _gyms = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await widget.api.getJson('/api/gyms', auth: false);
+      final data = json['data'];
+      final list = <Map<String, dynamic>>[];
+      if (data is List) {
+        for (final item in data) {
+          if (item is Map) {
+            list.add(Map<String, dynamic>.from(item.cast<String, dynamic>()));
+          }
+        }
+      }
+      setState(() => _gyms = list);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   Future<void> _openGoogleMaps(BuildContext context) async {
     final uri = Uri.parse('https://www.google.com/maps/search/phong+tap+gym+gần+tôi');
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await url_launcher.launchUrl(
+      uri,
+      mode: url_launcher.LaunchMode.externalApplication,
+    );
     if (!context.mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -25,20 +65,95 @@ class NearbyGymsScreen extends StatelessWidget {
     }
   }
 
+  /// Vị trí marker trên “bản đồ” demo (chuẩn hoá quanh khu vực TP.HCM nếu có tọa độ).
+  ({double x, double y, String distance}) _pinForIndex(int i, Map<String, dynamic> g) {
+    final lat = g['latitude'];
+    final lng = g['longitude'];
+    if (lat != null && lng != null) {
+      final la = (lat is num) ? lat.toDouble() : double.tryParse(lat.toString());
+      final ln = (lng is num) ? lng.toDouble() : double.tryParse(lng.toString());
+      if (la != null && ln != null) {
+        const minLat = 10.70;
+        const maxLat = 10.85;
+        const minLng = 106.65;
+        const maxLng = 106.75;
+        final nx = ((ln - minLng) / (maxLng - minLng)).clamp(0.12, 0.88);
+        final ny = (1.0 - ((la - minLat) / (maxLat - minLat))).clamp(0.12, 0.88);
+        return (x: nx, y: ny, distance: 'GPS');
+      }
+    }
+    final n = _gyms.length.clamp(1, 99);
+    final x = 0.18 + (i % 4) * 0.18;
+    final y = 0.22 + ((i * 3) % n) / n * 0.5;
+    return (x: x, y: y, distance: '≈ ${1.0 + i * 0.35} km');
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: _fbBg,
-      appBar: AppBar(
-        title: const Text('Phòng tập gần bạn'),
-      ),
-      body: ListView(
+    if (_loading) {
+      return const ColoredBox(
+        color: NearbyGymsScreen._fbBg,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return ColoredBox(
+        color: NearbyGymsScreen._fbBg,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton(onPressed: _load, child: const Text('Thử lại')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_gyms.isEmpty) {
+      return ColoredBox(
+        color: NearbyGymsScreen._fbBg,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.fitness_center, size: 48, color: theme.colorScheme.outline),
+                const SizedBox(height: 12),
+                Text(
+                  'Chưa có phòng tập trong hệ thống. Chạy php artisan db:seed trên backend để có dữ liệu mẫu.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => _openGoogleMaps(context),
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('Mở Google Maps'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ColoredBox(
+      color: NearbyGymsScreen._fbBg,
+      child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
           Text(
-            'Vị trí demo (khi có GPS sẽ căn theo bạn).',
+            'Danh sách từ máy chủ (demo bản đồ; khi có GPS sẽ căn theo bạn).',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
@@ -66,10 +181,13 @@ class NearbyGymsScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      for (final g in _demoGyms)
-                        Positioned(
-                          left: g.x * w - 18,
-                          top: g.y * h - 36,
+                      ...List<Widget>.generate(_gyms.length, (i) {
+                        final g = _gyms[i];
+                        final name = g['name']?.toString() ?? 'Gym';
+                        final pin = _pinForIndex(i, g);
+                        return Positioned(
+                          left: pin.x * w - 18,
+                          top: pin.y * h - 36,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -88,7 +206,7 @@ class NearbyGymsScreen extends StatelessWidget {
                                   ],
                                 ),
                                 child: Text(
-                                  g.name,
+                                  name,
                                   style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -96,7 +214,8 @@ class NearbyGymsScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                        ),
+                        );
+                      }),
                       Positioned(
                         right: 10,
                         bottom: 10,
@@ -129,35 +248,36 @@ class NearbyGymsScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Text('Gợi ý gần bạn', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          ..._demoGyms.map(
-            (g) => Card(
+          ...List<Widget>.generate(_gyms.length, (i) {
+            final g = _gyms[i];
+            final name = g['name']?.toString() ?? '—';
+            final addr = g['address']?.toString();
+            final pin = _pinForIndex(i, g);
+            return Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: theme.colorScheme.primaryContainer,
                   child: const Icon(Icons.fitness_center),
                 ),
-                title: Text(g.name),
-                subtitle: Text('${g.distance} · Đường đi ước lượng'),
+                title: Text(name),
+                subtitle: Text(
+                  [
+                    if (addr != null && addr.isNotEmpty) addr,
+                    if (pin.distance != 'GPS') pin.distance else 'Theo tọa độ',
+                  ].join(' · '),
+                ),
                 trailing: IconButton(
                   icon: const Icon(Icons.directions),
                   onPressed: () => _openGoogleMaps(context),
                 ),
               ),
-            ),
-          ),
+            );
+          }),
         ],
       ),
     );
   }
-}
-
-class _GymPin {
-  const _GymPin(this.name, this.x, this.y, this.distance);
-  final String name;
-  final double x;
-  final double y;
-  final String distance;
 }
 
 class _MapGridPainter extends CustomPainter {

@@ -1,0 +1,17 @@
+# === BMAD-METHOD (local install) ===
+/_bmad/
+/_bmad-output/
+
+# Some installs/tools may create similarly-named folders
+/_bmad-*/
+
+# === Cursor (local project data / downloaded skills) ===
+/.cursor/
+
+# === Local AI tool folders (optional) ===
+/.claude/
+/.ai/
+
+# === Toolchains / SDKs (local) ===
+/.tools/
+

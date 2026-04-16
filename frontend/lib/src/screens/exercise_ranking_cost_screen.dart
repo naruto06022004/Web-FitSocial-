@@ -1,8 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
+import '../models/fitnet_user.dart';
+import 'space/space_screen.dart';
+
 /// Xếp hạng "cost" bài tập (ước lượng calo / 15 phút — demo).
 class ExerciseRankingCostScreen extends StatelessWidget {
-  const ExerciseRankingCostScreen({super.key});
+  const ExerciseRankingCostScreen({
+    super.key,
+    required this.api,
+    required this.me,
+  });
+
+  final ApiClient api;
+  final FitnetUser me;
 
   static final List<_ExerciseCost> _rows = [
     _ExerciseCost('Burpees', 12, 'Toàn thân'),
@@ -73,6 +84,18 @@ class ExerciseRankingCostScreen extends StatelessWidget {
               ),
             );
           }),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => SpaceScreen(api: api, me: me),
+                ),
+              );
+            },
+            icon: const Icon(Icons.groups_outlined),
+            label: const Text('Space — người cùng phòng'),
+          ),
         ],
       ),
     );

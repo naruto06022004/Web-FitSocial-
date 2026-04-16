@@ -1,0 +1,236 @@
+import 'package:flutter/material.dart';
+
+import '../api/api_client.dart';
+
+class AdminRolesScreen extends StatefulWidget {
+  const AdminRolesScreen({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<AdminRolesScreen> createState() => _AdminRolesScreenState();
+}
+
+class _AdminRolesScreenState extends State<AdminRolesScreen> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _roles = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await widget.api.getJson('/api/admin/roles');
+      final data = json['data'];
+      final list = (data is List) ? data.cast<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
+      setState(() => _roles = list);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _editRole({Map<String, dynamic>? role}) async {
+    final isNew = role == null;
+    final keyCtrl = TextEditingController(text: (role?['key'] ?? '').toString());
+    final labelCtrl = TextEditingController(text: (role?['label'] ?? '').toString());
+
+    bool adminAccess = (role?['permissions']?['admin_access'] ?? false) == true;
+    bool rolesManage = (role?['permissions']?['roles_manage'] ?? false) == true;
+    bool usersManage = (role?['permissions']?['users_manage'] ?? false) == true;
+    bool postsManage = (role?['permissions']?['posts_manage'] ?? false) == true;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: Text(isNew ? 'Add Role' : 'Edit Role'),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: keyCtrl,
+                      enabled: isNew,
+                      decoration: const InputDecoration(
+                        labelText: 'Key (e.g. moderator)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: labelCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Label (e.g. Moderator)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Permissions', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      value: adminAccess,
+                      onChanged: (v) => setStateDialog(() => adminAccess = v),
+                      title: const Text('admin_access'),
+                      subtitle: const Text('Cho phép vào Admin Dashboard (/api/admin/*)'),
+                    ),
+                    SwitchListTile(
+                      value: usersManage,
+                      onChanged: (v) => setStateDialog(() => usersManage = v),
+                      title: const Text('users_manage'),
+                      subtitle: const Text('Quản lý users (tạo/sửa/xoá/portfolio)'),
+                    ),
+                    SwitchListTile(
+                      value: postsManage,
+                      onChanged: (v) => setStateDialog(() => postsManage = v),
+                      title: const Text('posts_manage'),
+                      subtitle: const Text('Quản lý posts'),
+                    ),
+                    SwitchListTile(
+                      value: rolesManage,
+                      onChanged: (v) => setStateDialog(() => rolesManage = v),
+                      title: const Text('roles_manage'),
+                      subtitle: const Text('Quản lý roles (CRUD)'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (ok != true) return;
+
+    final payload = <String, dynamic>{
+      'label': labelCtrl.text.trim(),
+      'permissions': {
+        'admin_access': adminAccess,
+        'users_manage': usersManage,
+        'posts_manage': postsManage,
+        'roles_manage': rolesManage,
+      },
+    };
+
+    try {
+      if (isNew) {
+        await widget.api.postJson('/api/admin/roles', {
+          'key': keyCtrl.text.trim(),
+          ...payload,
+        });
+      } else {
+        await widget.api.putJson('/api/admin/roles/${role['id']}', payload);
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+    }
+  }
+
+  Future<void> _deleteRole(Map<String, dynamic> role) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete role?'),
+        content: Text('Role: ${role['key']}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.api.deleteJson('/api/admin/roles/${role['id']}');
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text('Role Management', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
+              FilledButton.icon(
+                onPressed: _loading ? null : () => _editRole(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Role'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_loading) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+          if (!_loading && _error != null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(_error!)),
+                    const SizedBox(width: 10),
+                    FilledButton(onPressed: _load, child: const Text('Retry')),
+                  ],
+                ),
+              ),
+            ),
+          if (!_loading && _error == null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    for (final r in _roles) ...[
+                      ListTile(
+                        leading: const Icon(Icons.badge_outlined),
+                        title: Text('${r['label']}'),
+                        subtitle: Text('key: ${r['key']}'),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (v) {
+                            if (v == 'edit') _editRole(role: r);
+                            if (v == 'delete') _deleteRole(r);
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                            PopupMenuItem(value: 'delete', child: Text('Delete')),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

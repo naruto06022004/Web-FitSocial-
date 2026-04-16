@@ -16,10 +16,20 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
   String? _error;
   List<Map<String, dynamic>> _items = const [];
 
+  final _searchCtrl = TextEditingController();
+  String _statusFilter = 'All Status';
+  String _typeFilter = 'All Types';
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -109,16 +119,396 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_error!),
-            const SizedBox(height: 10),
-            FilledButton(onPressed: _load, child: const Text('Thử lại')),
-          ],
+    final theme = Theme.of(context);
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    final filtered = _items.where((p) {
+      final title = (p['title'] ?? '').toString().toLowerCase();
+      final content = (p['content'] ?? '').toString().toLowerCase();
+      final type = (p['type'] ?? p['category'] ?? 'Post').toString();
+      final status = (p['status'] ?? 'Published').toString();
+
+      if (q.isNotEmpty && !(title.contains(q) || content.contains(q))) return false;
+      if (_typeFilter != 'All Types' && type.toLowerCase() != _typeFilter.toLowerCase()) return false;
+      if (_statusFilter != 'All Status' && status.toLowerCase() != _statusFilter.toLowerCase()) return false;
+      return true;
+    }).toList();
+
+    int asInt(dynamic v) => int.tryParse(v?.toString() ?? '') ?? 0;
+    DateTime? asDate(dynamic v) => DateTime.tryParse(v?.toString() ?? '');
+
+    final now = DateTime.now();
+    final totalPosts = _items.length;
+    final todayPosts = _items.where((p) {
+      final dt = asDate(p['created_at'] ?? p['createdAt']);
+      if (dt == null) return false;
+      return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    }).length;
+    final totalLikes = _items.fold<int>(0, (sum, p) => sum + asInt(p['like_count'] ?? p['likes'] ?? 0));
+    final uniqueAuthors = _items.map((p) => (p['user_id'] ?? p['userId'] ?? '').toString()).where((s) => s.isNotEmpty).toSet().length;
+
+    Widget statCard({
+      required String title,
+      required String value,
+      required String subtitle,
+      required Color color,
+      required IconData icon,
+    }) {
+      return Card(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.labelMedium?.copyWith(color: const Color(0xFF64748B), fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text(value, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF94A3B8))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget pill(String text, {required Color bg, required Color fg}) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+        child: Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 12)),
+      );
+    }
+
+    Widget pageHeader() {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Post Management', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(
+                  'Monitor posts and content moderation',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          Wrap(
+            spacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _loading ? null : _load,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Refresh'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export report (demo)')));
+                },
+                icon: const Icon(Icons.file_download_outlined, size: 18),
+                label: const Text('Export Report'),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    Widget historyCard() {
+      final statuses = <String>['All Status', 'Published', 'Hidden', 'Flagged'];
+      final types = <String>['All Types', 'Post'];
+
+      final search = TextField(
+        controller: _searchCtrl,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          hintText: 'Search by title or content...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: const Color(0xFFF8FAFC),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+        ),
+      );
+
+      final statusDd = DropdownButtonFormField<String>(
+        key: ValueKey('postStatusFilter_$_statusFilter'),
+        initialValue: _statusFilter,
+        items: [for (final s in statuses) DropdownMenuItem(value: s, child: Text(s))],
+        onChanged: (v) => setState(() => _statusFilter = v ?? 'All Status'),
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: const Color(0xFFF8FAFC),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+          isDense: true,
+        ),
+      );
+
+      final typeDd = DropdownButtonFormField<String>(
+        key: ValueKey('postTypeFilter_$_typeFilter'),
+        initialValue: _typeFilter,
+        items: [for (final t in types) DropdownMenuItem(value: t, child: Text(t))],
+        onChanged: (v) => setState(() => _typeFilter = v ?? 'All Types'),
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: const Color(0xFFF8FAFC),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+          isDense: true,
+        ),
+      );
+
+      Widget headerCell(String t, int flex) {
+        return Expanded(
+          flex: flex,
+          child: Text(
+            t,
+            style: theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0.6, color: const Color(0xFF475569)),
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }
+
+      Widget cell(Widget child, int flex, {Alignment align = Alignment.centerLeft}) {
+        return Expanded(flex: flex, child: Align(alignment: align, child: child));
+      }
+
+      String formatDate(dynamic raw) {
+        final dt = asDate(raw);
+        if (dt == null) return '';
+        return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      }
+
+      return Card(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Post History', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'Manage posts and moderation logs',
+                style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, c) {
+                  final narrow = c.maxWidth < 860;
+                  if (narrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        search,
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(child: statusDd),
+                            const SizedBox(width: 10),
+                            Expanded(child: typeDd),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: search),
+                      const SizedBox(width: 12),
+                      SizedBox(width: 160, child: statusDd),
+                      const SizedBox(width: 12),
+                      SizedBox(width: 160, child: typeDd),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 22),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                      const SizedBox(width: 10),
+                      FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                    ],
+                  ),
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final maxTableHeight = (MediaQuery.of(context).size.height - 420).clamp(240.0, 620.0);
+                    final vertical = ScrollController();
+
+                    return SizedBox(
+                      height: maxTableHeight,
+                      child: Scrollbar(
+                        controller: vertical,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        interactive: true,
+                        child: SingleChildScrollView(
+                          controller: vertical,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    color: const Color(0xFFF8FAFC),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    child: Row(
+                                      children: [
+                                        headerCell('POST ID', 2),
+                                        const SizedBox(width: 12),
+                                        headerCell('TITLE', 4),
+                                        const SizedBox(width: 12),
+                                        headerCell('AUTHOR', 2),
+                                        const SizedBox(width: 12),
+                                        headerCell('LIKES', 2),
+                                        const SizedBox(width: 12),
+                                        headerCell('DATE', 2),
+                                        const SizedBox(width: 12),
+                                        headerCell('STATUS', 2),
+                                        const SizedBox(width: 12),
+                                        headerCell('ACTIONS', 1),
+                                      ],
+                                    ),
+                                  ),
+                                  if (filtered.isEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 26),
+                                      child: Text(
+                                        'Không có post phù hợp bộ lọc',
+                                        style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+                                      ),
+                                    )
+                                  else
+                                    ListView.separated(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: filtered.length,
+                                      separatorBuilder: (context, index) => Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
+                                      itemBuilder: (context, i) {
+                                        final p = filtered[i];
+                                        final id = (p['id'] ?? '').toString();
+                                        final title = (p['title'] ?? '(no title)').toString();
+                                        final author = (p['user_id'] ?? p['userId'] ?? '').toString();
+                                        final likes = asInt(p['like_count'] ?? p['likes'] ?? 0);
+                                        final dateText = formatDate(p['created_at'] ?? p['createdAt']);
+                                        final status = (p['status'] ?? 'Published').toString();
+
+                                        final statusChip = switch (status.toLowerCase()) {
+                                          'hidden' => pill('Hidden', bg: const Color(0xFFFEF3C7), fg: const Color(0xFF92400E)),
+                                          'flagged' => pill('Flagged', bg: const Color(0xFFFEE2E2), fg: const Color(0xFF991B1B)),
+                                          _ => pill('Published', bg: const Color(0xFF0F172A), fg: Colors.white),
+                                        };
+
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                          child: Row(
+                                            children: [
+                                              cell(Text(id, overflow: TextOverflow.ellipsis), 2),
+                                              const SizedBox(width: 12),
+                                              cell(
+                                                Text(
+                                                  title,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                                ),
+                                                4,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              cell(Text(author.isEmpty ? '-' : author, overflow: TextOverflow.ellipsis), 2),
+                                              const SizedBox(width: 12),
+                                              cell(Text(likes.toString(), overflow: TextOverflow.ellipsis), 2),
+                                              const SizedBox(width: 12),
+                                              cell(Text(dateText, overflow: TextOverflow.ellipsis), 2),
+                                              const SizedBox(width: 12),
+                                              cell(statusChip, 2),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                flex: 1,
+                                                child: Align(
+                                                  alignment: Alignment.centerLeft,
+                                                  child: PopupMenuButton<_PostAction>(
+                                                    tooltip: 'Actions',
+                                                    icon: const Icon(Icons.more_horiz),
+                                                    onSelected: (a) async {
+                                                      if (a == _PostAction.edit) {
+                                                        await _editPost(p);
+                                                      } else if (a == _PostAction.delete) {
+                                                        await _deletePost(p);
+                                                      } else if (a == _PostAction.hide) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Hide (demo)')));
+                                                      } else if (a == _PostAction.flag) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Flag (demo)')));
+                                                      }
+                                                    },
+                                                    itemBuilder: (context) => const [
+                                                      PopupMenuItem(value: _PostAction.edit, child: Text('Edit')),
+                                                      PopupMenuItem(value: _PostAction.hide, child: Text('Hide (demo)')),
+                                                      PopupMenuItem(value: _PostAction.flag, child: Text('Flag (demo)')),
+                                                      PopupMenuDivider(),
+                                                      PopupMenuItem(value: _PostAction.delete, child: Text('Delete')),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       );
     }
@@ -126,60 +516,72 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(24),
         children: [
-          Row(
-            children: [
-              Text('Posts', style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Reload'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 30),
-              child: Center(child: Text('Chưa có post nào')),
-            ),
-          for (final p in _items)
-            Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(p['title']?.toString() ?? '(no title)', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 6),
-                    Text(p['content']?.toString() ?? ''),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Text('id: ${p['id']} • user_id: ${p['user_id']}'),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Edit',
-                          onPressed: () => _editPost(p),
-                          icon: const Icon(Icons.edit_outlined),
-                        ),
-                        IconButton(
-                          tooltip: 'Delete',
-                          onPressed: () => _deletePost(p),
-                          icon: const Icon(Icons.delete_outline),
-                        ),
-                      ],
-                    ),
-                  ],
+          pageHeader(),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, c) {
+              final narrow = c.maxWidth < 980;
+              final cards = [
+                statCard(
+                  title: 'Total Posts',
+                  value: totalPosts.toString(),
+                  subtitle: 'All time',
+                  color: const Color(0xFF2563EB),
+                  icon: Icons.article_outlined,
                 ),
-              ),
-            ),
+                statCard(
+                  title: 'Published Today',
+                  value: todayPosts.toString(),
+                  subtitle: 'Today',
+                  color: const Color(0xFF16A34A),
+                  icon: Icons.today_outlined,
+                ),
+                statCard(
+                  title: 'Total Likes',
+                  value: totalLikes.toString(),
+                  subtitle: 'Across all posts',
+                  color: const Color(0xFFDC2626),
+                  icon: Icons.thumb_up_alt_outlined,
+                ),
+                statCard(
+                  title: 'Authors',
+                  value: uniqueAuthors.toString(),
+                  subtitle: 'Unique users',
+                  color: const Color(0xFF0F172A),
+                  icon: Icons.people_alt_outlined,
+                ),
+              ];
+
+              if (narrow) {
+                return Column(
+                  children: [
+                    for (final w in cards) ...[
+                      w,
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  for (var i = 0; i < cards.length; i++) ...[
+                    Expanded(child: cards[i]),
+                    if (i != cards.length - 1) const SizedBox(width: 12),
+                  ],
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          historyCard(),
         ],
       ),
     );
   }
 }
+
+enum _PostAction { edit, hide, flag, delete }
 

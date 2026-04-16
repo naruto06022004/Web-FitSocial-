@@ -86,8 +86,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: _fbBg,
       body: Column(
         children: [
-          _FitnetTopBar(
-            initial: initial,
+          _PortfolioHeaderBar(
+            title: 'Portfolio',
+            subtitle: me.name,
             onBack: () => Navigator.of(context).pop(),
             onOpenMenu: () => _showMoreSheet(context),
           ),
@@ -190,49 +191,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-class _FitnetTopBar extends StatelessWidget {
-  const _FitnetTopBar({
-    required this.initial,
+class _PortfolioHeaderBar extends StatelessWidget {
+  const _PortfolioHeaderBar({
+    required this.title,
+    required this.subtitle,
     required this.onBack,
     required this.onOpenMenu,
   });
 
-  final String initial;
+  final String title;
+  final String subtitle;
   final VoidCallback onBack;
   final VoidCallback onOpenMenu;
-
-  static const Color _fbBlue = Color(0xFF1877F2);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    Widget navIcon(IconData icon, {bool selected = false, VoidCallback? onTap}) {
-      return InkWell(
-        onTap: onTap ?? () {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chức năng demo')));
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 26, color: selected ? _fbBlue : Colors.black54),
-              if (selected)
-                Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  height: 3,
-                  width: 48,
-                  decoration: BoxDecoration(color: _fbBlue, borderRadius: BorderRadius.circular(2)),
-                )
-              else
-                const SizedBox(height: 7),
-            ],
-          ),
-        ),
-      );
-    }
 
     return Material(
       color: Colors.white,
@@ -244,91 +218,29 @@ class _FitnetTopBar extends StatelessWidget {
         ),
         child: SafeArea(
           bottom: false,
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final narrow = c.maxWidth < 900;
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Row(
-                  children: [
-                    IconButton(icon: const Icon(Icons.arrow_back), onPressed: onBack),
-                    Text('Fitnet', style: theme.textTheme.titleLarge?.copyWith(color: _fbBlue, fontWeight: FontWeight.w900)),
-                    if (!narrow) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 240),
-                          child: TextField(
-                            decoration: InputDecoration(
-                              hintText: 'Tìm kiếm trên Fitnet',
-                              prefixIcon: const Icon(Icons.search, size: 22),
-                              filled: true,
-                              fillColor: const Color(0xFFF0F2F5),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(999), borderSide: BorderSide.none),
-                              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                              isDense: true,
-                            ),
-                            onSubmitted: (_) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tìm kiếm (demo)')));
-                            },
-                          ),
-                        ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Row(
+              children: [
+                IconButton(icon: const Icon(Icons.arrow_back), onPressed: onBack),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ] else
-                      const Spacer(),
-                    if (!narrow)
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            navIcon(Icons.home_rounded, selected: false),
-                            navIcon(Icons.people_alt_outlined),
-                            navIcon(Icons.ondemand_video_outlined),
-                            navIcon(Icons.storefront_outlined),
-                            navIcon(Icons.groups_outlined),
-                            navIcon(Icons.account_circle, selected: true),
-                          ],
-                        ),
-                      )
-                    else
-                      const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.apps),
-                      onPressed: onOpenMenu,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tin nhắn (demo)'))),
-                    ),
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.notifications_outlined),
-                          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thông báo (demo)'))),
-                        ),
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4, left: 4),
-                      child: CircleAvatar(
-                        radius: 18,
-                        child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              );
-            },
+                IconButton(icon: const Icon(Icons.more_horiz), onPressed: onOpenMenu),
+              ],
+            ),
           ),
         ),
       ),

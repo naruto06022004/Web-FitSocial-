@@ -3,15 +3,28 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../models/fitnet_user.dart';
 import '../ui/fitnet_layout.dart';
+import '../social/components/create_post_box.dart';
+import '../social/components/post_card.dart';
+import '../social/components/right_panel_card.dart';
+import '../social/components/sidebar_item.dart';
+import '../social/components/story_card.dart';
 import 'exercise_ranking_cost_screen.dart';
 import 'nearby_gyms_screen.dart';
 import 'note_nodes_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.api, required this.me});
+  const HomeScreen({
+    super.key,
+    required this.api,
+    required this.me,
+    this.onOpenNearbyGyms,
+  });
 
   final ApiClient api;
   final FitnetUser me;
+
+  /// Mở màn phòng tập với cùng header Fitnet (do [UserAppShell] cung cấp).
+  final VoidCallback? onOpenNearbyGyms;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -205,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const fbBg = Color(0xFFF0F2F5);
+    const fbBg = Color(0xFFF5F7FA);
 
     return ColoredBox(
       color: fbBg,
@@ -244,7 +257,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: _buildFeedColumn(context),
                     ),
                     SizedBox(width: FitnetLayout.columnGap),
-                    SizedBox(width: FitnetLayout.rightRailWidth, child: const _RightSidebar()),
+                    SizedBox(
+                      width: FitnetLayout.rightRailWidth,
+                      child: _RightSidebar(
+                        api: widget.api,
+                        me: widget.me,
+                        onOpenNearbyGyms: widget.onOpenNearbyGyms,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -262,7 +282,11 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         _LeftSidebar(me: widget.me, compact: true),
         const SizedBox(height: 12),
-        _FacebookComposer(me: widget.me, onTap: _openComposer),
+        CreatePostBox(
+          avatarText: (widget.me.name.isNotEmpty ? widget.me.name[0] : '?'),
+          placeholder: 'Chia sẻ buổi tập hôm nay của bạn...',
+          onTapCompose: _openComposer,
+        ),
         const SizedBox(height: 10),
         _StoriesRow(me: widget.me),
         const SizedBox(height: 12),
@@ -275,7 +299,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ..._postCards(context),
         const SizedBox(height: 20),
-        const _RightSidebar(),
+        _RightSidebar(
+          api: widget.api,
+          me: widget.me,
+          onOpenNearbyGyms: widget.onOpenNearbyGyms,
+        ),
       ],
     );
   }
@@ -286,15 +314,32 @@ class _HomeScreenState extends State<HomeScreen> {
         Builder(builder: (context) {
           final id = int.tryParse(p['id']?.toString() ?? '') ?? -1;
           if (id < 0) return const SizedBox.shrink();
-          return _PostCard(
-            post: p,
-            likeCount: _likeCounts[id] ?? 0,
-            liked: _liked.contains(id),
-            onToggleLike: () => _toggleLike(id),
-            onComment: () => _openComments(id),
-            onShare: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã chia sẻ (demo)')));
-            },
+          final createdAt = DateTime.tryParse(p['created_at']?.toString() ?? '');
+          final timeText = createdAt == null ? '' : _relativeTime(createdAt);
+          final userId = p['user_id']?.toString() ?? '';
+          final authorLabel = userId.isEmpty ? 'Người dùng' : 'User #$userId';
+          final authorAvatarText = (authorLabel.isNotEmpty ? authorLabel[0] : '?');
+
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: Padding(
+              key: ValueKey('post_$id'),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: PostCard(
+                authorLabel: authorLabel,
+                authorAvatarText: authorAvatarText,
+                timeLabel: timeText.isEmpty ? 'Vừa xong' : timeText,
+                title: p['title']?.toString() ?? '',
+                body: p['content']?.toString() ?? '',
+                likeCount: _likeCounts[id] ?? 0,
+                liked: _liked.contains(id),
+                onToggleLike: () => _toggleLike(id),
+                onComment: () => _openComments(id),
+                onShare: () {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã chia sẻ (demo)')));
+                },
+              ),
+            ),
           );
         }),
     ];
@@ -304,7 +349,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FacebookComposer(me: widget.me, onTap: _openComposer),
+        CreatePostBox(
+          avatarText: (widget.me.name.isNotEmpty ? widget.me.name[0] : '?'),
+          placeholder: 'Chia sẻ buổi tập hôm nay của bạn...',
+          onTapCompose: _openComposer,
+        ),
         const SizedBox(height: 10),
         _StoriesRow(me: widget.me),
         const SizedBox(height: 12),
@@ -332,47 +381,10 @@ class _LeftSidebar extends StatelessWidget {
     final theme = Theme.of(context);
     final initial = (me.name.isNotEmpty ? me.name[0] : '?').toUpperCase();
 
-    Widget link(IconData icon, Color color, String label) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label (demo)')));
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: color.withValues(alpha: 0.2),
-                    child: Icon(icon, color: color, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final shortcuts = [
-      link(Icons.people_alt_outlined, const Color(0xFF1877F2), 'Bạn bè'),
-      link(Icons.video_library_outlined, const Color(0xFFE41E3F), 'Reels'),
-      link(Icons.bookmark_outline, const Color(0xFF8B5CF6), 'Đã lưu'),
-      link(Icons.groups_outlined, const Color(0xFF1877F2), 'Nhóm'),
-    ];
+    void tap(String label) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label (demo)')));
 
     if (compact) {
       return Card(
-        elevation: 0,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -387,11 +399,11 @@ class _LeftSidebar extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 4, children: [
-                for (final s in ['Bạn bè', 'Reels', 'Nhóm', 'Đã lưu'])
+                for (final s in ['Bạn bè', 'Nhóm', 'Đã lưu'])
                   ActionChip(
                     label: Text(s),
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$s (demo)')));
+                      tap(s);
                     },
                   ),
               ]),
@@ -405,41 +417,50 @@ class _LeftSidebar extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () {},
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  CircleAvatar(radius: 22, child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w800))),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(me.name, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  ),
-                ],
-              ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  foregroundColor: theme.colorScheme.primary,
+                  child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(me.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900))),
+              ],
             ),
           ),
         ),
         const SizedBox(height: 8),
-        ...shortcuts,
+        SidebarItem(icon: Icons.people_alt_outlined, label: 'Bạn bè', onTap: () => tap('Bạn bè')),
+        const SizedBox(height: 6),
+        SidebarItem(icon: Icons.bookmark_outline, label: 'Đã lưu', onTap: () => tap('Đã lưu')),
+        const SizedBox(height: 6),
+        SidebarItem(icon: Icons.groups_outlined, label: 'Nhóm', onTap: () => tap('Nhóm')),
         const SizedBox(height: 12),
         Text('Lối tắt của bạn', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         const SizedBox(height: 6),
-        link(Icons.fitness_center, const Color(0xFF42B72A), 'Fitnet Gym'),
-        link(Icons.event_outlined, const Color(0xFFE41E3F), 'Sự kiện tập luyện'),
+        SidebarItem(icon: Icons.fitness_center, label: 'Fitnet Gym', onTap: () => tap('Fitnet Gym')),
+        const SizedBox(height: 6),
+        SidebarItem(icon: Icons.event_outlined, label: 'Sự kiện tập luyện', onTap: () => tap('Sự kiện tập luyện')),
       ],
     );
   }
 }
 
 class _RightSidebar extends StatelessWidget {
-  const _RightSidebar();
+  const _RightSidebar({
+    required this.api,
+    required this.me,
+    this.onOpenNearbyGyms,
+  });
 
-  static const _cardRadius = BorderRadius.all(Radius.circular(12));
+  final ApiClient api;
+  final FitnetUser me;
+  final VoidCallback? onOpenNearbyGyms;
 
   @override
   Widget build(BuildContext context) {
@@ -450,79 +471,50 @@ class _RightSidebar extends StatelessWidget {
           child: Text(t, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
         );
 
-    Widget promoCard({
-      required IconData icon,
-      required Color iconBg,
-      required String title,
-      required String subtitle,
-      required VoidCallback onTap,
-    }) {
-      return Card(
-        elevation: 0,
-        color: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: _cardRadius),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: iconBg.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: iconBg, size: 30),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 4),
-                      Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                    ],
-                  ),
-                ),
-                Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     return ListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       children: [
         sectionTitle('Dành cho bạn'),
-        promoCard(
+        RightPanelCard(
           icon: Icons.map_outlined,
-          iconBg: const Color(0xFF1877F2),
+          iconColor: theme.colorScheme.primary,
           title: 'Phòng tập gần bạn',
           subtitle: 'Xem bản đồ và phòng gym quanh khu vực',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const NearbyGymsScreen())),
+          onTap: () {
+            if (onOpenNearbyGyms != null) {
+              onOpenNearbyGyms!();
+            } else {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(title: const Text('Phòng tập gần bạn')),
+                    body: NearbyGymsScreen(api: api),
+                  ),
+                ),
+              );
+            }
+          },
         ),
         const SizedBox(height: 10),
-        promoCard(
+        RightPanelCard(
           icon: Icons.hub_outlined,
-          iconBg: const Color(0xFF42B72A),
+          iconColor: const Color(0xFF16A34A),
           title: 'Node học tập',
           subtitle: 'Lưu ghi chú video, ảnh hoặc chữ',
           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const NoteNodesScreen())),
         ),
         const SizedBox(height: 10),
-        promoCard(
+        RightPanelCard(
           icon: Icons.leaderboard_outlined,
-          iconBg: const Color(0xFFE41E3F),
+          iconColor: const Color(0xFFDC2626),
           title: 'Ranking cost bài tập',
           subtitle: 'So sánh mức “cost” giữa các bài tập',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ExerciseRankingCostScreen())),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ExerciseRankingCostScreen(api: api, me: me),
+            ),
+          ),
         ),
       ],
     );
@@ -547,87 +539,34 @@ class _StoriesRow extends StatelessWidget {
         separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
           if (i == 0) {
-            return SizedBox(
-              width: 110,
-              child: Card(
-                elevation: 0,
-                color: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tạo tin (demo)')));
-                  },
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Container(color: theme.colorScheme.surfaceContainerHighest),
-                            Center(child: Icon(Icons.add_circle, color: theme.colorScheme.primary, size: 40)),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text('Tạo tin', style: theme.textTheme.labelLarge, textAlign: TextAlign.center),
-                      ),
-                    ],
-                  ),
-                ),
+            return StoryCard(
+              title: 'Tạo tin',
+              subtitle: 'Story',
+              avatarText: initial,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  theme.colorScheme.primary.withValues(alpha: 0.95),
+                  const Color(0xFF06B6D4).withValues(alpha: 0.95),
+                ],
               ),
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tạo tin (demo)'))),
             );
           }
-          return SizedBox(
-            width: 110,
-            child: Card(
-              elevation: 0,
-              color: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Xem tin #$i (demo)')));
-                },
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.blue.shade200,
-                            Colors.blue.shade800,
-                          ],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: CircleAvatar(
-                        radius: 16,
-                        child: Text(i == 1 ? initial : '?', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 8,
-                      left: 8,
-                      right: 8,
-                      child: Text(
-                        i == 1 ? me.name : 'Bạn $i',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          return StoryCard(
+            title: i == 1 ? me.name : 'Bạn $i',
+            subtitle: 'New',
+            avatarText: i == 1 ? initial : '?',
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF60A5FA).withValues(alpha: 0.95),
+                const Color(0xFF1D4ED8).withValues(alpha: 0.95),
+              ],
             ),
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Xem tin #$i (demo)'))),
           );
         },
       ),
@@ -939,163 +878,6 @@ class _PostToolbarIcon extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$tooltip (demo)')));
       },
       icon: Icon(icon, color: color, size: 22),
-    );
-  }
-}
-
-class _PostCard extends StatelessWidget {
-  const _PostCard({
-    required this.post,
-    required this.likeCount,
-    required this.liked,
-    required this.onToggleLike,
-    required this.onComment,
-    required this.onShare,
-  });
-
-  final Map<String, dynamic> post;
-  final int likeCount;
-  final bool liked;
-  final VoidCallback onToggleLike;
-  final VoidCallback onComment;
-  final VoidCallback onShare;
-
-  @override
-  Widget build(BuildContext context) {
-    final createdAt = DateTime.tryParse(post['created_at']?.toString() ?? '');
-    final timeText = createdAt == null ? '' : _relativeTime(createdAt);
-    final userId = post['user_id']?.toString() ?? '';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  child: Text(
-                    (userId.isNotEmpty ? userId[0] : '?').toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('User #$userId', style: Theme.of(context).textTheme.titleSmall),
-                      if (timeText.isNotEmpty)
-                        Text(
-                          timeText,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'More',
-                  onPressed: () {},
-                  icon: const Icon(Icons.more_horiz),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              post['title']?.toString() ?? '(no title)',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 6),
-            Text(post['content']?.toString() ?? ''),
-            const SizedBox(height: 8),
-            const Divider(height: 1),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: onToggleLike,
-                    icon: Icon(
-                      liked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                      color: liked ? Colors.blue : null,
-                      size: 18,
-                    ),
-                    label: Text('Like ($likeCount)'),
-                  ),
-                ),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: onComment,
-                    icon: const Icon(Icons.mode_comment_outlined, size: 18),
-                    label: const Text('Comment'),
-                  ),
-                ),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: onShare,
-                    icon: const Icon(Icons.reply_outlined, size: 18),
-                    label: const Text('Share'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FacebookComposer extends StatelessWidget {
-  const _FacebookComposer({required this.me, required this.onTap});
-
-  final FitnetUser me;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              child: Text(
-                (me.name.isNotEmpty ? me.name[0] : '?').toUpperCase(),
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(999),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                    borderRadius: BorderRadius.circular(999),
-                    color: Theme.of(context).colorScheme.surface,
-                  ),
-                  child: Text(
-                    'Bạn đang nghĩ gì?',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            IconButton(
-              tooltip: 'Tạo post',
-              onPressed: onTap,
-              icon: const Icon(Icons.edit_square),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

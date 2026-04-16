@@ -17,4 +17,3 @@ class TokenStorage {
 
   Future<void> deleteToken() => _storage.delete(key: _tokenKey);
 }
-

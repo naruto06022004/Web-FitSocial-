@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Schema;
 use App\Models\User;
+use App\Models\Role;
 
 class AuthController extends Controller
 {
@@ -87,12 +89,62 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         $u = $request->user();
+        $avatarUrl = Schema::hasColumn('users', 'avatar_url') ? $u->avatar_url : null;
+        $role = Role::query()->where('key', (string) ($u->role ?? 'user'))->first();
         return response()->json([
             'data' => [
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
                 'role' => $u->role,
+                'role_label' => $role?->label,
+                'permissions' => is_array($role?->permissions) ? $role->permissions : null,
+                'bio' => $u->bio,
+                'gym_name' => $u->gym_name,
+                'avatar_url' => $avatarUrl,
+            ],
+        ]);
+    }
+
+    public function updateMe(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:100'],
+            'bio' => ['nullable', 'string', 'max:2000'],
+            'gym_name' => ['nullable', 'string', 'max:120'],
+            'avatar_url' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $u = $request->user();
+        if (isset($data['name'])) {
+            $u->name = $data['name'];
+        }
+        if (array_key_exists('bio', $data)) {
+            $u->bio = $data['bio'];
+        }
+        if (array_key_exists('gym_name', $data)) {
+            $g = trim((string) $data['gym_name']);
+            $u->gym_name = $g === '' ? null : $g;
+        }
+        if (array_key_exists('avatar_url', $data) && Schema::hasColumn('users', 'avatar_url')) {
+            $a = trim((string) $data['avatar_url']);
+            $u->avatar_url = $a === '' ? null : $a;
+        }
+        $u->save();
+
+        $role = Role::query()->where('key', (string) ($u->role ?? 'user'))->first();
+        $avatarUrl = Schema::hasColumn('users', 'avatar_url') ? $u->avatar_url : null;
+        return response()->json([
+            'data' => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'email' => $u->email,
+                'role' => $u->role,
+                'role_label' => $role?->label,
+                'permissions' => is_array($role?->permissions) ? $role->permissions : null,
+                'bio' => $u->bio,
+                'gym_name' => $u->gym_name,
+                'avatar_url' => $avatarUrl,
             ],
         ]);
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import 'admin_user_portfolio_screen.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key, required this.api});
@@ -16,10 +17,32 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   String? _error;
   List<Map<String, dynamic>> _items = const [];
 
+  final _searchCtrl = TextEditingController();
+  String _roleFilter = 'all';
+  String _statusFilter = 'All Status';
+
+  static String _roleLabel(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return 'Admin';
+      case 'staff':
+        return 'Teacher';
+      case 'user':
+      default:
+        return 'Student';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -44,40 +67,91 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
     String role = 'user';
+    String status = 'Active';
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
+            InputDecoration deco(String label, {String? hint}) => InputDecoration(
+                  labelText: label,
+                  hintText: hint,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                );
+
             return AlertDialog(
-              title: const Text('Tạo user'),
-              content: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
-                    TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
-                    TextField(
-                      controller: passwordCtrl,
-                      decoration: const InputDecoration(labelText: 'Password'),
-                      obscureText: true,
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButton<String>(
-                      value: role,
-                      items: const [
-                        DropdownMenuItem(value: 'user', child: Text('user')),
-                        DropdownMenuItem(value: 'admin', child: Text('admin')),
-                        DropdownMenuItem(value: 'staff', child: Text('staff')),
-                      ],
-                      onChanged: (v) => setStateDialog(() => role = v ?? 'user'),
-                    ),
-                  ],
+              titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+              contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              title: Row(
+                children: [
+                  const Expanded(child: Text('Add New User')),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context, false),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      TextField(controller: nameCtrl, decoration: deco('Full Name*', hint: 'Enter full name')),
+                      const SizedBox(height: 10),
+                      TextField(controller: emailCtrl, decoration: deco('Email Address*', hint: 'Enter email address')),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: passwordCtrl,
+                        decoration: deco('Password*', hint: 'Enter password'),
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('role_$role'),
+                        initialValue: role,
+                        decoration: deco('Role*', hint: 'Select role'),
+                        items: const [
+                          DropdownMenuItem(value: 'user', child: Text('Student')),
+                          DropdownMenuItem(value: 'staff', child: Text('Teacher')),
+                          DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                        ],
+                        onChanged: (v) => setStateDialog(() => role = v ?? 'user'),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('status_$status'),
+                        initialValue: status,
+                        decoration: deco('Status', hint: 'Select status'),
+                        items: const [
+                          DropdownMenuItem(value: 'Active', child: Text('Active')),
+                          DropdownMenuItem(value: 'Inactive', child: Text('Inactive')),
+                        ],
+                        onChanged: (v) => setStateDialog(() => status = v ?? 'Active'),
+                      ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Status chỉ dùng để hiển thị (demo) nếu API chưa hỗ trợ.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
-                FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Tạo')),
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
+                  child: const Text('Add User'),
+                ),
               ],
             );
           },
@@ -112,12 +186,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 children: [
                   DropdownButton<String>(
                     value: nextRole,
-                items: const [
-                  DropdownMenuItem(value: 'user', child: Text('user')),
-                  DropdownMenuItem(value: 'admin', child: Text('admin')),
-                      DropdownMenuItem(value: 'staff', child: Text('staff')),
-                ],
-                onChanged: (v) => setStateDialog(() => nextRole = v ?? 'user'),
+                    items: const [
+                      DropdownMenuItem(value: 'user', child: Text('Student')),
+                      DropdownMenuItem(value: 'staff', child: Text('Teacher')),
+                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                    ],
+                    onChanged: (v) => setStateDialog(() => nextRole = v ?? 'user'),
                   ),
                 ],
               ),
@@ -154,18 +228,218 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     await _load();
   }
 
+  void _openPortfolio(Map<String, dynamic> u) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminUserPortfolioScreen(api: widget.api, user: u),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_error!),
-            const SizedBox(height: 10),
-            FilledButton(onPressed: _load, child: const Text('Thử lại')),
-          ],
+    final theme = Theme.of(context);
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    final filtered = _items.where((u) {
+      final name = (u['name'] ?? '').toString().toLowerCase();
+      final email = (u['email'] ?? '').toString().toLowerCase();
+      final role = (u['role'] ?? 'user').toString();
+      final status = (u['status'] ?? 'Active').toString();
+
+      if (q.isNotEmpty && !(name.contains(q) || email.contains(q))) return false;
+      if (_roleFilter != 'all' && role.toLowerCase() != _roleFilter.toLowerCase()) return false;
+      if (_statusFilter != 'All Status' && status.toLowerCase() != _statusFilter.toLowerCase()) return false;
+      return true;
+    }).toList();
+
+    Widget pill(String text, {bool active = true}) {
+      final bg = active ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0);
+      final fg = active ? Colors.white : const Color(0xFF0F172A);
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+        child: Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
+      );
+    }
+
+    Widget pageHeader() {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('User Management', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(
+                  'Manage users in the system',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: _loading ? null : _createUser,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add New User'),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
+          ),
+        ],
+      );
+    }
+
+    Widget directoryCard() {
+      final roles = <Map<String, String>>[
+        {'value': 'all', 'label': 'All Roles'},
+        {'value': 'staff', 'label': 'Teacher'},
+        {'value': 'user', 'label': 'Student'},
+        {'value': 'admin', 'label': 'Admin'},
+      ];
+      final statuses = <String>['All Status', 'Active', 'Inactive'];
+
+      return Card(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('User Directory', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'Search and filter users (${filtered.length} users)',
+                style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, c) {
+                  final narrow = c.maxWidth < 720;
+                  final search = TextField(
+                    controller: _searchCtrl,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name or email...',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+                    ),
+                  );
+
+                  final roleDd = DropdownButtonFormField<String>(
+                    key: ValueKey('roleFilter_$_roleFilter'),
+                    initialValue: _roleFilter,
+                    items: [
+                      for (final r in roles) DropdownMenuItem(value: r['value'], child: Text(r['label']!)),
+                    ],
+                    onChanged: (v) => setState(() => _roleFilter = v ?? 'all'),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+                      isDense: true,
+                    ),
+                  );
+
+                  final statusDd = DropdownButtonFormField<String>(
+                    key: ValueKey('statusFilter_$_statusFilter'),
+                    initialValue: _statusFilter,
+                    items: [for (final s in statuses) DropdownMenuItem(value: s, child: Text(s))],
+                    onChanged: (v) => setState(() => _statusFilter = v ?? 'All Status'),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+                      isDense: true,
+                    ),
+                  );
+
+                  if (narrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        search,
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(child: roleDd),
+                            const SizedBox(width: 10),
+                            Expanded(child: statusDd),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: search),
+                      const SizedBox(width: 12),
+                      SizedBox(width: 160, child: roleDd),
+                      const SizedBox(width: 12),
+                      SizedBox(width: 160, child: statusDd),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                      const SizedBox(width: 10),
+                      FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                    ],
+                  ),
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final maxTableHeight = (MediaQuery.of(context).size.height - 320).clamp(240.0, 620.0);
+                    final vertical = ScrollController();
+
+                    return SizedBox(
+                      height: maxTableHeight,
+                      child: Scrollbar(
+                        controller: vertical,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        interactive: true,
+                        child: SingleChildScrollView(
+                          controller: vertical,
+                          child: _AdminUsersFlexTable(
+                            theme: theme,
+                            users: filtered,
+                            pill: pill,
+                            onEditRole: _updateRole,
+                            onDelete: _deleteUser,
+                            onOpenPortfolio: _openPortfolio,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       );
     }
@@ -173,43 +447,217 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(24),
         children: [
-          Row(
-            children: [
-              Text('Users', style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
-              FilledButton.icon(onPressed: _createUser, icon: const Icon(Icons.add), label: const Text('New')),
-            ],
-          ),
-          const SizedBox(height: 12),
-          for (final u in _items)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.person),
-                title: Text(u['name']?.toString() ?? '(no name)'),
-                subtitle: Text(u['email']?.toString() ?? ''),
-                trailing: Wrap(
-                  spacing: 8,
-                  children: [
-                    Chip(label: Text((u['role'] ?? 'user').toString())),
-                    IconButton(
-                      tooltip: 'Edit role',
-                      onPressed: () => _updateRole(u),
-                      icon: const Icon(Icons.settings_outlined),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete',
-                      onPressed: () => _deleteUser(u),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          pageHeader(),
+          const SizedBox(height: 16),
+          directoryCard(),
         ],
       ),
     );
   }
+}
+
+class _AdminUsersFlexTable extends StatelessWidget {
+  const _AdminUsersFlexTable({
+    required this.theme,
+    required this.users,
+    required this.pill,
+    required this.onEditRole,
+    required this.onDelete,
+    required this.onOpenPortfolio,
+  });
+
+  final ThemeData theme;
+  final List<Map<String, dynamic>> users;
+  final Widget Function(String text, {bool active}) pill;
+  final Future<void> Function(Map<String, dynamic> u) onEditRole;
+  final Future<void> Function(Map<String, dynamic> u) onDelete;
+  final void Function(Map<String, dynamic> u) onOpenPortfolio;
+
+  @override
+  Widget build(BuildContext context) {
+    final border = BorderSide(color: Colors.black.withValues(alpha: 0.06));
+    final now = DateTime.now();
+
+    Widget headerCell(String t, int flex) {
+      return Expanded(
+        flex: flex,
+        child: Text(
+          t,
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.6,
+            color: const Color(0xFF475569),
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+    }
+
+    Widget cell(Widget child, int flex, {Alignment align = Alignment.centerLeft}) {
+      return Expanded(
+        flex: flex,
+        child: Align(alignment: align, child: child),
+      );
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: border, left: border, right: border, bottom: border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              color: const Color(0xFFF8FAFC),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  headerCell('NAME', 3),
+                  const SizedBox(width: 12),
+                  headerCell('EMAIL', 4),
+                  const SizedBox(width: 12),
+                  headerCell('ROLE', 2),
+                  const SizedBox(width: 12),
+                  headerCell('STATUS', 2),
+                  const SizedBox(width: 12),
+                  headerCell('LAST LOGIN', 2),
+                  const SizedBox(width: 12),
+                  headerCell('ACTIONS', 2),
+                ],
+              ),
+            ),
+            if (users.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Text(
+                  'Không có user phù hợp bộ lọc',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: users.length,
+                separatorBuilder: (context, index) => Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
+                itemBuilder: (context, i) {
+                  final u = users[i];
+                  final status = (u['status'] ?? 'Active').toString();
+                  final inactive = status.toLowerCase() == 'inactive';
+                  final lastLoginText = _formatLastLogin(u, now: now);
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        cell(
+                          Text(
+                            u['name']?.toString() ?? '(no name)',
+                            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          3,
+                        ),
+                        const SizedBox(width: 12),
+                        cell(
+                          Text(
+                            u['email']?.toString() ?? '',
+                            style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          4,
+                        ),
+                        const SizedBox(width: 12),
+                        cell(
+                          Text(
+                            _AdminUsersScreenState._roleLabel((u['role'] ?? 'user').toString()),
+                            style: theme.textTheme.bodyMedium,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          2,
+                        ),
+                        const SizedBox(width: 12),
+                        cell(
+                          inactive ? pill('Inactive', active: false) : pill('Active', active: true),
+                          2,
+                        ),
+                        const SizedBox(width: 12),
+                        cell(
+                          Text(
+                            lastLoginText,
+                            style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          2,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: PopupMenuButton<_UserAction>(
+                              tooltip: 'Actions',
+                              icon: const Icon(Icons.more_horiz),
+                              onSelected: (a) async {
+                                if (a == _UserAction.portfolio) {
+                                  onOpenPortfolio(u);
+                                } else if (a == _UserAction.editRole) {
+                                  await onEditRole(u);
+                                } else if (a == _UserAction.delete) {
+                                  await onDelete(u);
+                                }
+                              },
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
+                                  value: _UserAction.portfolio,
+                                  child: Text('Portfolio'),
+                                ),
+                                PopupMenuItem(
+                                  value: _UserAction.editRole,
+                                  child: Text('Edit role'),
+                                ),
+                                PopupMenuItem(
+                                  value: _UserAction.delete,
+                                  child: Text('Delete'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _UserAction { portfolio, editRole, delete }
+
+String _formatLastLogin(Map<String, dynamic> u, {required DateTime now}) {
+  final raw = u['last_login'] ?? u['last_login_at'] ?? u['lastLogin'] ?? u['last_login_time'];
+  if (raw == null) return '';
+
+  final s = raw.toString().trim();
+  if (s.isEmpty) return '';
+
+  final dt = DateTime.tryParse(s);
+  if (dt == null) return s; // already "2 hours ago" or unknown format
+
+  final diff = now.difference(dt);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} minutes ago';
+  if (diff.inHours < 24) return '${diff.inHours} hours ago';
+  if (diff.inDays < 7) return '${diff.inDays} days ago';
+  return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 }
 

@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../auth/auth_repository.dart';
 import '../models/fitnet_user.dart';
-import '../ui/fitnet_layout.dart';
+import '../ui/fitnet_chrome.dart';
+import '../ui/fitnet_header.dart';
+import '../ui/fitnet_mobile_top_bar.dart';
+import 'chat/chat_conversations_screen.dart';
 import 'friends_screen.dart';
 import 'home_screen.dart';
 import 'market_screen.dart';
+import 'nearby_gyms_screen.dart';
 import 'profile_screen.dart';
 
 class UserAppShell extends StatefulWidget {
@@ -16,12 +20,14 @@ class UserAppShell extends StatefulWidget {
     required this.me,
     required this.authRepository,
     required this.onLoggedOut,
+    this.onOpenAdminDashboard,
   });
 
   final ApiClient api;
   final FitnetUser me;
   final AuthRepository authRepository;
   final VoidCallback onLoggedOut;
+  final VoidCallback? onOpenAdminDashboard;
 
   @override
   State<UserAppShell> createState() => _UserAppShellState();
@@ -32,7 +38,15 @@ class _UserAppShellState extends State<UserAppShell> {
   bool _hasNotifications = true;
   final TextEditingController _searchCtrl = TextEditingController();
 
-  static const Color _navSelected = Color(0xFF1877F2);
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -53,9 +67,69 @@ class _UserAppShellState extends State<UserAppShell> {
     );
   }
 
+  /// Cùng header với Home cho mọi màn push (chat, phòng gym, …).
+  Widget _fitnetChromePage(BuildContext routeContext, Widget body) {
+    return FitnetChrome(
+      me: widget.me,
+      selectedTabIndex: -1,
+      hasNotifications: _hasNotifications,
+      searchController: _searchCtrl,
+      onTabSelected: (i) {
+        Navigator.of(routeContext).popUntil((r) => r.isFirst);
+        setState(() => _tabIndex = i);
+      },
+      onSearchSubmitted: _submitSearch,
+      onMessenger: () {
+        final nav = Navigator.of(routeContext);
+        if (nav.canPop()) {
+          nav.maybePop();
+        }
+      },
+      onNotifications: () {
+        Navigator.of(routeContext).popUntil((r) => r.isFirst);
+        _openNotifications();
+      },
+      onProfile: () {
+        Navigator.of(routeContext).popUntil((r) => r.isFirst);
+        _openProfilePage();
+      },
+      body: body,
+      onOpenAdminDashboard: widget.onOpenAdminDashboard,
+    );
+  }
+
+  void _pushFitnetPage(BuildContext navigatorContext, Widget page) {
+    Navigator.of(navigatorContext).push<void>(
+      MaterialPageRoute<void>(
+        builder: (routeContext) => _fitnetChromePage(routeContext, page),
+      ),
+    );
+  }
+
+  void _replaceFitnetPage(BuildContext navigatorContext, Widget page) {
+    Navigator.of(navigatorContext).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (routeContext) => _fitnetChromePage(routeContext, page),
+      ),
+    );
+  }
+
   void _openMessenger() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tin nhắn (demo)')),
+    _pushFitnetPage(
+      context,
+      ChatConversationsScreen(
+        api: widget.api,
+        me: widget.me,
+        pushChrome: _pushFitnetPage,
+        replaceChrome: _replaceFitnetPage,
+      ),
+    );
+  }
+
+  void _openNearbyGyms() {
+    _pushFitnetPage(
+      context,
+      NearbyGymsScreen(api: widget.api),
     );
   }
 
@@ -95,313 +169,64 @@ class _UserAppShellState extends State<UserAppShell> {
     );
   }
 
-  Widget _centerNavButton({
-    required IconData iconSelected,
-    required IconData iconOutline,
-    required String label,
-    required int index,
-    bool compact = false,
-  }) {
-    final selected = _tabIndex == index;
-    final color = selected ? _navSelected : Colors.black54;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _tabIndex = index),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: compact ? 4 : 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                selected ? iconSelected : iconOutline,
-                size: compact ? 22 : 24,
-                color: color,
-              ),
-              if (!compact) ...[
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    height: 1.1,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: color,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                if (selected)
-                  Container(
-                    height: 3,
-                    width: 48,
-                    decoration: BoxDecoration(
-                      color: _navSelected,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  )
-                else
-                  const SizedBox(height: 3),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _navRow({required bool compact}) {
-    return Row(
-      children: [
-        _centerNavButton(
-          index: 0,
-          label: 'Home',
-          iconSelected: Icons.home,
-          iconOutline: Icons.home_outlined,
-          compact: compact,
-        ),
-        _centerNavButton(
-          index: 1,
-          label: 'Bạn bè',
-          iconSelected: Icons.people,
-          iconOutline: Icons.people_outline,
-          compact: compact,
-        ),
-        _centerNavButton(
-          index: 2,
-          label: 'Market',
-          iconSelected: Icons.storefront,
-          iconOutline: Icons.storefront_outlined,
-          compact: compact,
-        ),
-      ],
-    );
-  }
-
-  Widget _searchField() {
-    return Material(
-      color: const Color(0xFFF0F2F5),
-      borderRadius: BorderRadius.circular(999),
-      child: TextField(
-        controller: _searchCtrl,
-        onSubmitted: _submitSearch,
-        textInputAction: TextInputAction.search,
-        style: const TextStyle(fontSize: 15),
-        decoration: InputDecoration(
-          hintText: 'Tìm kiếm trên Fitnet',
-          prefixIcon: const Icon(Icons.search, size: 22, color: Colors.black54),
-          suffixIcon: _searchCtrl.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, size: 20),
-                  onPressed: () {
-                    _searchCtrl.clear();
-                    setState(() {});
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        ),
-        onChanged: (_) => setState(() {}),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
-    // Cùng ngưỡng với HomeScreen (3 cột feed).
-    final useGridHeader = width >= 1000;
-    final compactNav = width < 520;
+    final isMobile = width < 720;
 
-    final brand = Text(
-      'Fitnet',
-      style: theme.textTheme.titleLarge?.copyWith(
-        fontWeight: FontWeight.w800,
-        color: _navSelected,
+    final pages = [
+      HomeScreen(
+        api: widget.api,
+        me: widget.me,
+        onOpenNearbyGyms: _openNearbyGyms,
       ),
-    );
+      FriendsScreen(api: widget.api),
+      MarketScreen(api: widget.api),
+    ];
 
-    Widget wideTitleGrid() {
-      return SizedBox(
-        height: 72,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: FitnetLayout.maxContentWidth),
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: FitnetLayout.pagePadding.left,
-                right: FitnetLayout.pagePadding.right,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                SizedBox(
-                  width: FitnetLayout.leftRailWidth,
-                  child: Row(
-                    children: [
-                      Flexible(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: brand)),
-                      const SizedBox(width: 8),
-                      Expanded(child: SizedBox(height: 40, child: _searchField())),
-                    ],
-                  ),
-                ),
-                SizedBox(width: FitnetLayout.columnGap),
-                Expanded(
-                  flex: 2,
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: _navRow(compact: compactNav),
-                  ),
-                ),
-                SizedBox(width: FitnetLayout.columnGap),
-                SizedBox(
-                  width: FitnetLayout.rightRailWidth,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        tooltip: 'Messenger',
-                        onPressed: _openMessenger,
-                        icon: Icon(Icons.chat_bubble_outline, size: 26, color: Colors.grey.shade800),
-                      ),
-                      IconButton(
-                        tooltip: 'Thông báo',
-                        onPressed: _openNotifications,
-                        icon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Icon(Icons.notifications_outlined, size: 26, color: Colors.grey.shade800),
-                            if (_hasNotifications)
-                              Positioned(
-                                right: -2,
-                                top: -2,
-                                child: Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.red,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      InkWell(
-                        onTap: _openProfilePage,
-                        borderRadius: BorderRadius.circular(999),
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: CircleAvatar(
-                            radius: 18,
-                            child: Text(
-                              (widget.me.name.isNotEmpty ? widget.me.name[0] : '?').toUpperCase(),
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+    if (isMobile) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F7FA),
+        appBar: FitnetMobileTopBar(
+          me: widget.me,
+          searchController: _searchCtrl,
+          onSearchSubmitted: _submitSearch,
+          hasNotifications: _hasNotifications,
+          onMessenger: _openMessenger,
+          onNotifications: _openNotifications,
+          onProfile: _openProfilePage,
+          onOpenAdminDashboard: widget.onOpenAdminDashboard,
         ),
-      ),
+        body: IndexedStack(index: _tabIndex, children: pages),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _tabIndex,
+          onDestinationSelected: (i) => setState(() => _tabIndex = i),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
+            NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Bạn bè'),
+            NavigationDestination(icon: Icon(Icons.storefront_outlined), selectedIcon: Icon(Icons.storefront), label: 'Market'),
+          ],
+        ),
       );
     }
 
-    final narrowTrailing = Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Messenger',
-            onPressed: _openMessenger,
-            icon: Icon(Icons.chat_bubble_outline, size: 26, color: Colors.grey.shade800),
-          ),
-          IconButton(
-            tooltip: 'Thông báo',
-            onPressed: _openNotifications,
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(Icons.notifications_outlined, size: 26, color: Colors.grey.shade800),
-                if (_hasNotifications)
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          InkWell(
-            onTap: _openProfilePage,
-            borderRadius: BorderRadius.circular(999),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 10, left: 4),
-              child: CircleAvatar(
-                radius: 18,
-                child: Text(
-                  (widget.me.name.isNotEmpty ? widget.me.name[0] : '?').toUpperCase(),
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        elevation: 0.5,
-        scrolledUnderElevation: 0.5,
-        titleSpacing: 0,
-        toolbarHeight: useGridHeader ? 72 : 120,
-        title: useGridHeader
-            ? wideTitleGrid()
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Padding(padding: const EdgeInsets.only(left: 8), child: brand),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SizedBox(height: 40, child: _searchField()),
-                      ),
-                      narrowTrailing,
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  SizedBox(height: 56, child: _navRow(compact: compactNav)),
-                ],
-              ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: FitnetHeader(
+        me: widget.me,
+        selectedTabIndex: _tabIndex,
+        hasNotifications: _hasNotifications,
+        searchController: _searchCtrl,
+        onTabSelected: (i) => setState(() => _tabIndex = i),
+        onSearchSubmitted: _submitSearch,
+        onMessenger: _openMessenger,
+        onNotifications: _openNotifications,
+        onProfile: _openProfilePage,
+        onOpenAdminDashboard: widget.onOpenAdminDashboard,
       ),
       body: IndexedStack(
         index: _tabIndex,
-        children: [
-          HomeScreen(api: widget.api, me: widget.me),
-          FriendsScreen(api: widget.api),
-          MarketScreen(api: widget.api),
-        ],
+        children: pages,
       ),
     );
   }

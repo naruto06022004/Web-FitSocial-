@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'api/api_client.dart';
 import 'auth/auth_repository.dart';
 import 'screens/login_screen.dart';
-import 'screens/admin_mode_select_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/user_app_shell.dart';
 import 'storage/token_storage.dart';
@@ -28,9 +28,41 @@ class _FitnetAppState extends State<FitnetApp> {
           return const MaterialApp(home: Scaffold(body: Center(child: CircularProgressIndicator())));
         }
         final deps = snap.data!;
+
+        const seed = Color(0xFF2563EB); // modern blue accent
+        final cs = ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light).copyWith(
+          surface: Colors.white,
+        );
+        final base = ThemeData(colorScheme: cs, useMaterial3: true);
+        final textTheme = GoogleFonts.interTextTheme(base.textTheme).apply(
+          bodyColor: const Color(0xFF0F172A),
+          displayColor: const Color(0xFF0F172A),
+        );
+        final theme = base.copyWith(
+          scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+          textTheme: textTheme,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            shadowColor: Colors.transparent,
+          ),
+          cardTheme: CardThemeData(
+            color: Colors.white,
+            elevation: 0,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+            ),
+          ),
+          dividerTheme: DividerThemeData(color: Colors.black.withValues(alpha: 0.06)),
+        );
+
         return MaterialApp(
           title: 'Fitnet',
-          theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.green), useMaterial3: true),
+          theme: theme,
           home: _Root(deps: deps),
         );
       },
@@ -50,7 +82,6 @@ class _Root extends StatefulWidget {
 class _RootState extends State<_Root> {
   bool _ready = false;
   FitnetUser? _me;
-  FitnetAdminMode? _adminMode;
 
   @override
   void initState() {
@@ -70,14 +101,12 @@ class _RootState extends State<_Root> {
       final user = await widget.deps.authRepository.me();
       setState(() {
         _me = user;
-        _adminMode = null;
         _ready = true;
       });
     } catch (_) {
       await widget.deps.tokenStorage.deleteToken();
       setState(() {
         _me = null;
-        _adminMode = null;
         _ready = true;
       });
     }
@@ -85,7 +114,6 @@ class _RootState extends State<_Root> {
 
   void _logout() => setState(() {
         _me = null;
-        _adminMode = null;
       });
 
   @override
@@ -99,7 +127,6 @@ class _RootState extends State<_Root> {
         authRepository: widget.deps.authRepository,
         onLoggedIn: (user) => setState(() {
           _me = user;
-          _adminMode = null;
         }),
       );
     }
@@ -115,34 +142,27 @@ class _RootState extends State<_Root> {
       );
     }
 
-    if (_adminMode == null) {
-      return AdminModeSelectScreen(
-        user: _me!,
-        onOpenAdminDashboard: () => setState(() => _adminMode = FitnetAdminMode.adminPanel),
-        onOpenUserMode: () => setState(() => _adminMode = FitnetAdminMode.userMode),
-      );
-    }
-
-    if (_adminMode == FitnetAdminMode.adminPanel) {
-      return AdminDashboardScreen(
-        api: widget.deps.api,
-        authRepository: widget.deps.authRepository,
-        onLoggedOut: _logout,
-      );
-    }
-
-    return UserAppShell(
+    return AdminDashboardScreen(
       api: widget.deps.api,
-      me: _me!,
       authRepository: widget.deps.authRepository,
       onLoggedOut: _logout,
+      onOpenUserMode: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => UserAppShell(
+              api: widget.deps.api,
+              me: _me!,
+              authRepository: widget.deps.authRepository,
+              onLoggedOut: _logout,
+              onOpenAdminDashboard: () {
+                Navigator.of(context).maybePop();
+              },
+            ),
+          ),
+        );
+      },
     );
   }
-}
-
-enum FitnetAdminMode {
-  adminPanel,
-  userMode,
 }
 
 class _Deps {
