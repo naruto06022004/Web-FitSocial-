@@ -3,9 +3,16 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 
 class AdminRolesScreen extends StatefulWidget {
-  const AdminRolesScreen({super.key, required this.api});
+  const AdminRolesScreen({
+    super.key,
+    required this.api,
+    this.onAfterRoleCreated,
+  });
 
   final ApiClient api;
+
+  /// Called after a **new** role is saved successfully (e.g. navigate to User Management).
+  final VoidCallback? onAfterRoleCreated;
 
   @override
   State<AdminRolesScreen> createState() => _AdminRolesScreenState();
@@ -14,6 +21,7 @@ class AdminRolesScreen extends StatefulWidget {
 class _AdminRolesScreenState extends State<AdminRolesScreen> {
   bool _loading = true;
   String? _error;
+  String? _schemaHint;
   List<Map<String, dynamic>> _roles = const [];
 
   @override
@@ -26,12 +34,24 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _schemaHint = null;
     });
     try {
       final json = await widget.api.getJson('/api/admin/roles');
       final data = json['data'];
       final list = (data is List) ? data.cast<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
-      setState(() => _roles = list);
+      final meta = json['meta'];
+      String? hint;
+      if (meta is Map) {
+        final incomplete = meta['schema_incomplete'];
+        if (incomplete == true) {
+          hint = (meta['hint'] ?? 'Run php artisan migrate (backend/laravel).').toString();
+        }
+      }
+      setState(() {
+        _roles = list;
+        _schemaHint = hint;
+      });
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -137,10 +157,14 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
           'key': keyCtrl.text.trim(),
           ...payload,
         });
+        await _load();
+        if (mounted) {
+          widget.onAfterRoleCreated?.call();
+        }
       } else {
         await widget.api.putJson('/api/admin/roles/${role['id']}', payload);
+        await _load();
       }
-      await _load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $e')));
     }
@@ -151,7 +175,9 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete role?'),
-        content: Text('Role: ${role['key']}'),
+        content: Text(
+          'Role: ${role['key']}\n\nAccounts using this role will be reassigned to Student (user) so they can still sign in.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
@@ -160,8 +186,15 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
     );
     if (ok != true) return;
     try {
-      await widget.api.deleteJson('/api/admin/roles/${role['id']}');
+      final res = await widget.api.deleteJson('/api/admin/roles/${role['id']}');
       await _load();
+      if (!mounted) return;
+      final n = res['reassigned_users'];
+      if (n is num && n > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Role deleted. ${n.toInt()} user(s) reassigned to Student (user).')),
+        );
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
@@ -186,6 +219,27 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
             ],
           ),
           const SizedBox(height: 14),
+          if (!_loading && _schemaHint != null)
+            Card(
+              color: const Color(0xFFFEF9C3),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFF854D0E)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _schemaHint!,
+                        style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF854D0E)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (!_loading && _schemaHint != null) const SizedBox(height: 12),
           if (_loading) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
           if (!_loading && _error != null)
             Card(

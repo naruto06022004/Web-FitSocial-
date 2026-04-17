@@ -131,9 +131,7 @@ class _RootState extends State<_Root> {
       );
     }
 
-    final isAdmin = _me!.role == 'admin' || _me!.role == 'staff';
-
-    if (!isAdmin) {
+    if (!_me!.hasAdminAccess) {
       return UserAppShell(
         api: widget.deps.api,
         me: _me!,
@@ -145,6 +143,7 @@ class _RootState extends State<_Root> {
     return AdminDashboardScreen(
       api: widget.deps.api,
       authRepository: widget.deps.authRepository,
+      me: _me!,
       onLoggedOut: _logout,
       onOpenUserMode: () {
         Navigator.of(context).push(

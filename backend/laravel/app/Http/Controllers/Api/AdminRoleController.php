@@ -4,18 +4,37 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AdminRoleController extends Controller
 {
     public function index()
     {
+        if (! Schema::hasTable('roles')) {
+            return response()->json([
+                'data' => [],
+                'meta' => [
+                    'schema_incomplete' => true,
+                    'hint' => 'Run migrations: php artisan migrate (from backend/laravel)',
+                ],
+            ]);
+        }
+
         $roles = Role::query()->orderBy('key')->get();
         return response()->json(['data' => $roles]);
     }
 
     public function store(Request $request)
     {
+        if (! Schema::hasTable('roles')) {
+            return response()->json([
+                'message' => 'Database schema incomplete: roles table missing. Run: php artisan migrate',
+            ], 503);
+        }
+
         $data = $request->validate([
             'key' => ['required', 'string', 'max:40', 'regex:/^[a-z0-9_]+$/i', 'unique:roles,key'],
             'label' => ['required', 'string', 'max:80'],
@@ -49,14 +68,19 @@ class AdminRoleController extends Controller
             return response()->json(['message' => 'Cannot delete system role'], 422);
         }
 
-        // Prevent deleting role that is still in use
-        $inUse = \App\Models\User::query()->where('role', $role->key)->exists();
-        if ($inUse) {
-            return response()->json(['message' => 'Role is in use by users'], 422);
-        }
+        $fallback = 'user';
+        $reassigned = 0;
 
-        $role->delete();
-        return response()->json(['ok' => true]);
+        DB::transaction(function () use ($role, $fallback, &$reassigned): void {
+            $reassigned = User::query()->where('role', $role->key)->update(['role' => $fallback]);
+            $role->delete();
+        });
+
+        return response()->json([
+            'ok' => true,
+            'reassigned_users' => $reassigned,
+            'fallback_role' => $fallback,
+        ]);
     }
 }
 

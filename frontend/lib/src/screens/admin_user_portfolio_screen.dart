@@ -214,6 +214,10 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
     final name = (_user['name'] ?? '').toString();
     final email = (_user['email'] ?? '').toString();
     final role = (_user['role'] ?? '').toString();
+    final roleLabelRaw = _user['role_label']?.toString().trim();
+    final roleDisplay = (roleLabelRaw != null && roleLabelRaw.isNotEmpty)
+        ? (roleLabelRaw.toLowerCase() == role.toLowerCase() ? roleLabelRaw : '$roleLabelRaw ($role)')
+        : role;
     final status = (_user['status'] ?? 'Active').toString();
     final id = (_user['id'] ?? '').toString();
     final avatarUrl = (_user['avatar_url'] ?? _user['avatar'] ?? '').toString();
@@ -335,7 +339,7 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
               row(Icons.fitness_center, gymName.isEmpty ? 'Chưa có gym' : gymName),
               const Divider(height: 24),
               row(Icons.email_outlined, email.isEmpty ? '-' : email),
-              row(Icons.badge_outlined, 'Vai trò: ${role.isEmpty ? '-' : role}'),
+              row(Icons.badge_outlined, 'Vai trò: ${role.isEmpty ? '-' : roleDisplay}'),
             ],
           ),
         ),
@@ -486,7 +490,7 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
                   sectionTitle('Thông tin quản lý'),
                   const SizedBox(height: 10),
                   infoRow('User ID', id),
-                  infoRow('Role', role),
+                  infoRow('Role', roleDisplay),
                   infoRow('Status', status),
                   infoRow('Last login', (_user['last_login'] ?? _user['last_login_at'] ?? '').toString()),
                   const SizedBox(height: 10),
@@ -509,7 +513,9 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
                         ? 'Admin: toàn quyền (Users/Posts/Settings).'
                         : role == 'staff'
                             ? 'Teacher: truy cập dashboard, quản lý posts; giới hạn một số thao tác user.'
-                            : 'Student: chỉ dùng giao diện người dùng.',
+                            : role == 'user'
+                                ? 'Student: chỉ dùng giao diện người dùng.'
+                                : 'Vai trò tùy chỉnh ($role). Quyền cụ thể nằm trong Role Management.',
                     style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
                   ),
                 ],

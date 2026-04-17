@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Route middleware aliases for API routes (Laravel 11/12 style).
         $middleware->alias([
             'ensure.admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'permission' => \App\Http\Middleware\EnsureRolePermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

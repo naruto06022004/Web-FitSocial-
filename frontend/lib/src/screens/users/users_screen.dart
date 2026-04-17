@@ -33,7 +33,7 @@ class _UsersScreenState extends State<UsersScreen> {
       final list = (data is List) ? data.cast<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
       setState(() => _items = list);
     } catch (e) {
-      setState(() => _error = 'Không tải được users (cần quyền admin)');
+      setState(() => _error = 'Không tải được users (cần quyền users_manage / admin)');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

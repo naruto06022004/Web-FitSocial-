@@ -8,16 +8,33 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->text('bio')->nullable()->after('role');
-            $table->string('gym_name', 120)->nullable()->after('bio');
-        });
+        if (! Schema::hasColumn('users', 'bio')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->text('bio')->nullable()->after('role');
+            });
+        }
+
+        if (! Schema::hasColumn('users', 'gym_name')) {
+            Schema::table('users', function (Blueprint $table) {
+                $after = Schema::hasColumn('users', 'bio') ? 'bio' : 'role';
+                $table->string('gym_name', 120)->nullable()->after($after);
+            });
+        }
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['bio', 'gym_name']);
+            $drop = [];
+            if (Schema::hasColumn('users', 'gym_name')) {
+                $drop[] = 'gym_name';
+            }
+            if (Schema::hasColumn('users', 'bio')) {
+                $drop[] = 'bio';
+            }
+            if ($drop !== []) {
+                $table->dropColumn($drop);
+            }
         });
     }
 };

@@ -16,6 +16,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _items = const [];
+  List<Map<String, dynamic>> _roleOptions = const [];
 
   final _searchCtrl = TextEditingController();
   String _roleFilter = 'all';
@@ -31,6 +32,67 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       default:
         return 'Student';
     }
+  }
+
+  /// Prefer API [role_label] (from Role Management); fallback for legacy keys.
+  static String displayRoleForUser(Map<String, dynamic> u) {
+    final rl = u['role_label']?.toString().trim();
+    if (rl != null && rl.isNotEmpty) return rl;
+    return _roleLabel((u['role'] ?? 'user').toString());
+  }
+
+  List<Map<String, String>> _roleFilterRows() {
+    if (_roleOptions.isNotEmpty) {
+      final sorted = List<Map<String, dynamic>>.from(_roleOptions);
+      sorted.sort((a, b) => (a['key'] ?? '').toString().compareTo((b['key'] ?? '').toString()));
+      return [
+        {'value': 'all', 'label': 'All Roles'},
+        for (final r in sorted)
+          {
+            'value': (r['key'] ?? '').toString(),
+            'label': (r['label'] ?? r['key']).toString(),
+          },
+      ];
+    }
+    return [
+      {'value': 'all', 'label': 'All Roles'},
+      {'value': 'staff', 'label': 'Teacher'},
+      {'value': 'user', 'label': 'Student'},
+      {'value': 'admin', 'label': 'Admin'},
+    ];
+  }
+
+  List<DropdownMenuItem<String>> _rolePickItems({String? ensureKey}) {
+    final seen = <String>{};
+    final out = <DropdownMenuItem<String>>[];
+
+    void add(String k, String label) {
+      if (k.isEmpty || seen.contains(k)) return;
+      seen.add(k);
+      out.add(DropdownMenuItem<String>(value: k, child: Text(label)));
+    }
+
+    for (final r in _roleOptions) {
+      final k = (r['key'] ?? '').toString();
+      final lab = (r['label'] ?? k).toString();
+      add(k, '$lab ($k)');
+    }
+    final ek = ensureKey?.trim() ?? '';
+    if (ek.isNotEmpty && !seen.contains(ek)) {
+      add(ek, '${_roleLabel(ek)} ($ek)');
+    }
+    if (out.isEmpty) {
+      add('user', 'Student (user)');
+      add('staff', 'Teacher (staff)');
+      add('admin', 'Admin (admin)');
+    }
+    return out;
+  }
+
+  String _defaultNewUserRole() {
+    if (_roleOptions.any((r) => (r['key'] ?? '').toString() == 'user')) return 'user';
+    if (_roleOptions.isNotEmpty) return (_roleOptions.first['key'] ?? 'user').toString();
+    return 'user';
   }
 
   @override
@@ -54,7 +116,22 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       final json = await widget.api.getJson('/api/admin/users');
       final data = json['data'];
       final list = (data is List) ? data.cast<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
-      setState(() => _items = list);
+      List<Map<String, dynamic>> opts = const [];
+      final meta = json['meta'];
+      if (meta is Map) {
+        final ro = meta['role_options'];
+        if (ro is List) {
+          opts = ro.cast<Map>().map((e) => e.cast<String, dynamic>()).toList();
+        }
+      }
+      setState(() {
+        _items = list;
+        _roleOptions = opts;
+        final allowed = _roleFilterRows().map((e) => e['value']).toSet();
+        if (!allowed.contains(_roleFilter)) {
+          _roleFilter = 'all';
+        }
+      });
     } catch (_) {
       setState(() => _error = 'Không tải được users');
     } finally {
@@ -66,8 +143,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
-    String role = 'user';
+    String role = _defaultNewUserRole();
     String status = 'Active';
+    final roleItems = _rolePickItems();
 
     final ok = await showDialog<bool>(
       context: context,
@@ -113,14 +191,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       const SizedBox(height: 10),
                       DropdownButtonFormField<String>(
                         key: ValueKey('role_$role'),
-                        initialValue: role,
+                        initialValue: roleItems.any((i) => i.value == role) ? role : roleItems.first.value,
                         decoration: deco('Role*', hint: 'Select role'),
-                        items: const [
-                          DropdownMenuItem(value: 'user', child: Text('Student')),
-                          DropdownMenuItem(value: 'staff', child: Text('Teacher')),
-                          DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                        ],
-                        onChanged: (v) => setStateDialog(() => role = v ?? 'user'),
+                        items: roleItems,
+                        onChanged: (v) => setStateDialog(() => role = v ?? roleItems.first.value!),
                       ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<String>(
@@ -173,6 +247,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final id = u['id'];
     final currentRole = (u['role'] ?? 'user').toString();
     String nextRole = currentRole;
+    final pickItems = _rolePickItems(ensureKey: currentRole);
+    if (!pickItems.any((i) => i.value == nextRole)) {
+      nextRole = pickItems.first.value!;
+    }
 
     final ok = await showDialog<bool>(
       context: context,
@@ -185,13 +263,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButton<String>(
-                    value: nextRole,
-                    items: const [
-                      DropdownMenuItem(value: 'user', child: Text('Student')),
-                      DropdownMenuItem(value: 'staff', child: Text('Teacher')),
-                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                    ],
-                    onChanged: (v) => setStateDialog(() => nextRole = v ?? 'user'),
+                    value: pickItems.any((i) => i.value == nextRole) ? nextRole : pickItems.first.value,
+                    items: pickItems,
+                    onChanged: (v) => setStateDialog(() => nextRole = v ?? pickItems.first.value!),
                   ),
                 ],
               ),
@@ -291,12 +365,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
 
     Widget directoryCard() {
-      final roles = <Map<String, String>>[
-        {'value': 'all', 'label': 'All Roles'},
-        {'value': 'staff', 'label': 'Teacher'},
-        {'value': 'user', 'label': 'Student'},
-        {'value': 'admin', 'label': 'Admin'},
-      ];
+      final roles = _roleFilterRows();
       final statuses = <String>['All Status', 'Active', 'Inactive'];
 
       return Card(
@@ -575,7 +644,7 @@ class _AdminUsersFlexTable extends StatelessWidget {
                         const SizedBox(width: 12),
                         cell(
                           Text(
-                            _AdminUsersScreenState._roleLabel((u['role'] ?? 'user').toString()),
+                            _AdminUsersScreenState.displayRoleForUser(u),
                             style: theme.textTheme.bodyMedium,
                             overflow: TextOverflow.ellipsis,
                           ),

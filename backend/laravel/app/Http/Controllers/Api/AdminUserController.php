@@ -25,6 +25,56 @@ class AdminUserController extends Controller
         return $cols;
     }
 
+    private function resolveRoleLabel(string $roleKey): string
+    {
+        $roleKey = strtolower($roleKey);
+
+        if (Schema::hasTable('roles')) {
+            $role = Role::query()->where('key', $roleKey)->first();
+            if ($role && is_string($role->label) && $role->label !== '') {
+                return $role->label;
+            }
+        }
+
+        return match ($roleKey) {
+            'admin' => 'Admin',
+            'staff' => 'Teacher',
+            'user' => 'Student',
+            default => $roleKey,
+        };
+    }
+
+    /**
+     * @return list<array{key: string, label: string}>
+     */
+    private function roleOptionsForMeta(): array
+    {
+        if (! Schema::hasTable('roles')) {
+            return [];
+        }
+
+        return Role::query()
+            ->orderBy('key')
+            ->get(['key', 'label'])
+            ->map(fn (Role $r) => [
+                'key' => (string) $r->key,
+                'label' => (string) $r->label,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function userPayloadWithRoleLabel(User $user): array
+    {
+        $row = $user->only($this->userSelectColumns());
+        $row['role_label'] = $this->resolveRoleLabel((string) ($user->role ?? 'user'));
+
+        return $row;
+    }
+
     public function index()
     {
         $users = User::query()
@@ -32,14 +82,20 @@ class AdminUserController extends Controller
             ->limit(200)
             ->get($this->userSelectColumns());
 
-        return response()->json(['data' => $users]);
+        $data = $users->map(fn (User $u) => $this->userPayloadWithRoleLabel($u))->values();
+
+        return response()->json([
+            'data' => $data,
+            'meta' => [
+                'role_options' => $this->roleOptionsForMeta(),
+            ],
+        ]);
     }
 
     public function show(User $user)
     {
-        $data = $user->only($this->userSelectColumns());
         return response()->json([
-            'data' => $data,
+            'data' => $this->userPayloadWithRoleLabel($user),
         ]);
     }
 
@@ -80,7 +136,7 @@ class AdminUserController extends Controller
 
         $user = User::query()->create($create);
 
-        return response()->json(['data' => $user], 201);
+        return response()->json(['data' => $this->userPayloadWithRoleLabel($user)], 201);
     }
 
     public function update(Request $request, User $user)
@@ -118,7 +174,7 @@ class AdminUserController extends Controller
         $user->fill($data);
         $user->save();
 
-        return response()->json(['data' => $user]);
+        return response()->json(['data' => $this->userPayloadWithRoleLabel($user)]);
     }
 
     public function destroy(User $user)

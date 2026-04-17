@@ -34,13 +34,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/chat/seen/{user}', [ChatController::class, 'markSeen']);
 
     Route::prefix('admin')->group(function () {
-        Route::middleware('ensure.admin')->group(function () {
+        Route::middleware(['ensure.admin', 'permission:users_manage'])->group(function () {
             Route::get('/users', [AdminUserController::class, 'index']);
             Route::get('/users/{user}', [AdminUserController::class, 'show']);
             Route::post('/users', [AdminUserController::class, 'store']);
             Route::put('/users/{user}', [AdminUserController::class, 'update']);
             Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
+        });
 
+        Route::middleware(['ensure.admin', 'permission:roles_manage'])->group(function () {
             Route::get('/roles', [AdminRoleController::class, 'index']);
             Route::post('/roles', [AdminRoleController::class, 'store']);
             Route::put('/roles/{role}', [AdminRoleController::class, 'update']);

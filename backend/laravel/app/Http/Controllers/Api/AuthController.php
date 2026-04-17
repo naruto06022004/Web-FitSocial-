@@ -33,6 +33,19 @@ class AuthController extends Controller
             ]);
         }
 
+        $roleKey = trim((string) ($user->role ?? ''));
+        if ($roleKey === '') {
+            $user->role = 'user';
+            $user->save();
+        } elseif (Schema::hasTable('roles')) {
+            $knownSystem = in_array($roleKey, ['admin', 'staff'], true);
+            $exists = Role::query()->where('key', $roleKey)->exists();
+            if (! $knownSystem && ! $exists) {
+                $user->role = 'user';
+                $user->save();
+            }
+        }
+
         $token = $user->createToken('fitnet')->plainTextToken;
 
         return response()->json([
