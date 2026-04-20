@@ -18,13 +18,13 @@ class FitnetUser {
   /// `null` = always allowed (e.g. Dashboard shell tab).
   bool hasPermission(String? key) {
     if (key == null) return true;
+    if (role == 'admin') return true;
     final p = permissions;
     if (p != null) {
       return p[key] == true;
     }
-    if (role == 'admin') return true;
     if (role == 'staff') {
-      return key == 'users_manage' || key == 'posts_manage';
+      return key == 'users_manage' || key == 'posts_manage' || key == 'exercises_manage' || key == 'ranking_manage';
     }
     return false;
   }

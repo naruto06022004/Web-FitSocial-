@@ -8,11 +8,17 @@ class PostCard extends StatefulWidget {
     required this.timeLabel,
     required this.title,
     required this.body,
+    this.badgeLabel,
+    this.exerciseName,
+    this.ratingAvg,
+    this.ratingCount,
+    this.onRate,
     required this.likeCount,
     required this.liked,
     required this.onToggleLike,
     required this.onComment,
     required this.onShare,
+    this.onCardTap,
   });
 
   final String authorLabel;
@@ -20,11 +26,18 @@ class PostCard extends StatefulWidget {
   final String timeLabel;
   final String title;
   final String body;
+  final String? badgeLabel;
+  /// Tên bài tập gắn với post (kind exercise); đồng bộ với API `data[].exercise.name`.
+  final String? exerciseName;
+  final double? ratingAvg;
+  final int? ratingCount;
+  final ValueChanged<int>? onRate; // stars 1..5
   final int likeCount;
   final bool liked;
   final VoidCallback onToggleLike;
   final VoidCallback onComment;
   final VoidCallback onShare;
+  final VoidCallback? onCardTap;
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -37,6 +50,7 @@ class _PostCardState extends State<PostCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final likeColor = widget.liked ? theme.colorScheme.primary : const Color(0xFF334155);
+    final isRateable = widget.onRate != null;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -59,7 +73,7 @@ class _PostCardState extends State<PostCard> {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onHover: (v) => setState(() => _hover = v),
-          onTap: () {},
+          onTap: widget.onCardTap ?? () {},
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -103,11 +117,72 @@ class _PostCardState extends State<PostCard> {
                     widget.title,
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, height: 1.2),
                   ),
+                if (widget.exerciseName != null && widget.exerciseName!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.fitness_center_outlined, size: 18, color: theme.colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          widget.exerciseName!.trim(),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (widget.body.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
                     widget.body,
                     style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF334155), height: 1.35),
+                  ),
+                ],
+                if (widget.badgeLabel != null || widget.ratingCount != null) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (widget.badgeLabel != null)
+                        Chip(
+                          label: Text(widget.badgeLabel!),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      if (widget.ratingCount != null)
+                        Chip(
+                          label: Text(
+                            widget.ratingAvg == null
+                                ? '${widget.ratingCount} vote'
+                                : '${widget.ratingAvg!.toStringAsFixed(1)} ★  (${widget.ratingCount} vote)',
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                ],
+                if (isRateable) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text('Vote:', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 8),
+                      for (final s in [1, 2, 3, 4, 5])
+                        IconButton(
+                          tooltip: '$s sao',
+                          onPressed: () => widget.onRate?.call(s),
+                          icon: const Icon(Icons.star, size: 20),
+                          style: IconButton.styleFrom(
+                            foregroundColor: const Color(0xFFF59E0B),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
                 const SizedBox(height: 12),

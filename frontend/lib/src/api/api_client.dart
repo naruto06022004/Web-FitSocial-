@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
@@ -10,6 +11,7 @@ class ApiClient {
   ApiClient({required TokenStorage tokenStorage}) : _tokenStorage = tokenStorage;
 
   final TokenStorage _tokenStorage;
+  static const Duration _timeout = Duration(seconds: 12);
 
   Uri _uri(String path) => Uri.parse('${FitnetConfig.apiBaseUrl}$path');
 
@@ -30,7 +32,14 @@ class ApiClient {
   Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body, {bool auth = true}) async {
     final uri = _uri(path);
     DebugLog.add('api', 'POST $uri', details: _redactBody(body));
-    final res = await http.post(uri, headers: await _headers(auth: auth), body: jsonEncode(body));
+    http.Response res;
+    try {
+      res = await http
+          .post(uri, headers: await _headers(auth: auth), body: jsonEncode(body))
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException(statusCode: 0, message: 'Request timed out. Check server/DB is running.', body: null);
+    }
     DebugLog.add('api', '← ${res.statusCode} POST $uri', details: _truncate(res.body));
     return _decode(res);
   }
@@ -38,7 +47,12 @@ class ApiClient {
   Future<Map<String, dynamic>> getJson(String path, {bool auth = true}) async {
     final uri = _uri(path);
     DebugLog.add('api', 'GET $uri');
-    final res = await http.get(uri, headers: await _headers(auth: auth));
+    http.Response res;
+    try {
+      res = await http.get(uri, headers: await _headers(auth: auth)).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException(statusCode: 0, message: 'Request timed out. Check server/DB is running.', body: null);
+    }
     DebugLog.add('api', '← ${res.statusCode} GET $uri', details: _truncate(res.body));
     return _decode(res);
   }
@@ -46,7 +60,12 @@ class ApiClient {
   Future<Map<String, dynamic>> putJson(String path, Map<String, dynamic> body) async {
     final uri = _uri(path);
     DebugLog.add('api', 'PUT $uri', details: _redactBody(body));
-    final res = await http.put(uri, headers: await _headers(), body: jsonEncode(body));
+    http.Response res;
+    try {
+      res = await http.put(uri, headers: await _headers(), body: jsonEncode(body)).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException(statusCode: 0, message: 'Request timed out. Check server/DB is running.', body: null);
+    }
     DebugLog.add('api', '← ${res.statusCode} PUT $uri', details: _truncate(res.body));
     return _decode(res);
   }
@@ -54,7 +73,12 @@ class ApiClient {
   Future<Map<String, dynamic>> deleteJson(String path) async {
     final uri = _uri(path);
     DebugLog.add('api', 'DELETE $uri');
-    final res = await http.delete(uri, headers: await _headers());
+    http.Response res;
+    try {
+      res = await http.delete(uri, headers: await _headers()).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException(statusCode: 0, message: 'Request timed out. Check server/DB is running.', body: null);
+    }
     DebugLog.add('api', '← ${res.statusCode} DELETE $uri', details: _truncate(res.body));
     return _decode(res);
   }

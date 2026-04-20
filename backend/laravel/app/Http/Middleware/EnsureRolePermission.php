@@ -17,6 +17,9 @@ class EnsureRolePermission
         }
 
         $roleKey = (string) ($user->role ?? 'user');
+        if ($roleKey === 'admin') {
+            return $next($request);
+        }
 
         $role = null;
         $perms = [];
@@ -43,6 +46,7 @@ class EnsureRolePermission
         return match ($permission) {
             'users_manage', 'posts_manage' => in_array($roleKey, ['admin', 'staff'], true),
             'roles_manage' => $roleKey === 'admin',
+            'exercises_manage', 'ranking_manage' => in_array($roleKey, ['admin', 'staff'], true),
             default => false,
         };
     }

@@ -17,6 +17,7 @@ class EnsureAdmin
         }
 
         $roleKey = (string) ($user->role ?? 'user');
+        $isSystemStaff = in_array($roleKey, ['admin', 'staff'], true);
 
         $role = null;
         $perms = [];
@@ -25,14 +26,14 @@ class EnsureAdmin
             $perms = is_array($role?->permissions) ? $role->permissions : [];
         }
 
-        $has = ($perms['admin_access'] ?? false) === true;
+        // admin/staff luôn vào được admin API; role tùy chỉnh cần admin_access trên bản ghi roles.
+        $has = $isSystemStaff || (($perms['admin_access'] ?? false) === true);
 
-        // Backward-compatible fallback (if roles table not migrated/seeded yet, or no role row).
-        if (!$role) {
-            $has = $roleKey === 'admin' || $roleKey === 'staff';
+        if (! $role) {
+            $has = $isSystemStaff;
         }
 
-        if (!$has) {
+        if (! $has) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 

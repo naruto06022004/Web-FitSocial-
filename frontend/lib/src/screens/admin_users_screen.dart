@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../ui/fitnet_layout.dart';
 import 'admin_user_portfolio_screen.dart';
 
 class AdminUsersScreen extends StatefulWidget {
@@ -313,6 +314,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenW = MediaQuery.sizeOf(context).width;
+    final useCards = FitnetBreakpoints.useAdminCards(screenW);
+    final compactHeader = FitnetBreakpoints.isCompactWidth(screenW);
     final q = _searchCtrl.text.trim().toLowerCase();
 
     final filtered = _items.where((u) {
@@ -338,6 +342,29 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
 
     Widget pageHeader() {
+      final addBtn = FilledButton.icon(
+        onPressed: _loading ? null : _createUser,
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('Add New User'),
+        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
+      );
+
+      if (compactHeader) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('User Management', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              'Manage users in the system',
+              style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 12),
+            addBtn,
+          ],
+        );
+      }
+
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -354,12 +381,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ],
             ),
           ),
-          FilledButton.icon(
-            onPressed: _loading ? null : _createUser,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add New User'),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
-          ),
+          addBtn,
         ],
       );
     }
@@ -471,13 +493,31 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     color: theme.colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
-                      const SizedBox(width: 10),
-                      FilledButton(onPressed: _load, child: const Text('Thử lại')),
-                    ],
-                  ),
+                  child: useCards
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                            const SizedBox(height: 12),
+                            FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                            const SizedBox(width: 10),
+                            FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                          ],
+                        ),
+                )
+              else if (useCards)
+                _AdminUsersCardList(
+                  theme: theme,
+                  users: filtered,
+                  pill: pill,
+                  onEditRole: _updateRole,
+                  onDelete: _deleteUser,
+                  onOpenPortfolio: _openPortfolio,
                 )
               else
                 LayoutBuilder(
@@ -516,13 +556,127 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: FitnetBreakpoints.pagePaddingInsets(screenW),
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           pageHeader(),
           const SizedBox(height: 16),
           directoryCard(),
         ],
       ),
+    );
+  }
+}
+
+class _AdminUsersCardList extends StatelessWidget {
+  const _AdminUsersCardList({
+    required this.theme,
+    required this.users,
+    required this.pill,
+    required this.onEditRole,
+    required this.onDelete,
+    required this.onOpenPortfolio,
+  });
+
+  final ThemeData theme;
+  final List<Map<String, dynamic>> users;
+  final Widget Function(String text, {bool active}) pill;
+  final Future<void> Function(Map<String, dynamic> u) onEditRole;
+  final Future<void> Function(Map<String, dynamic> u) onDelete;
+  final void Function(Map<String, dynamic> u) onOpenPortfolio;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+
+    if (users.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Text(
+          'Không có user phù hợp bộ lọc',
+          style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final u in users)
+          Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          u['name']?.toString() ?? '(no name)',
+                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      PopupMenuButton<_UserAction>(
+                        icon: const Icon(Icons.more_horiz),
+                        onSelected: (a) async {
+                          if (a == _UserAction.portfolio) {
+                            onOpenPortfolio(u);
+                          } else if (a == _UserAction.editRole) {
+                            await onEditRole(u);
+                          } else if (a == _UserAction.delete) {
+                            await onDelete(u);
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: _UserAction.portfolio, child: Text('Portfolio')),
+                          PopupMenuItem(value: _UserAction.editRole, child: Text('Edit role')),
+                          PopupMenuItem(value: _UserAction.delete, child: Text('Delete')),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    u['email']?.toString() ?? '',
+                    style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final status = (u['status'] ?? 'Active').toString();
+                      final inactive = status.toLowerCase() == 'inactive';
+                      final statusW = inactive ? pill('Inactive', active: false) : pill('Active', active: true);
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            _AdminUsersScreenState.displayRoleForUser(u),
+                            style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          statusW,
+                          Text(
+                            _formatLastLogin(u, now: now),
+                            style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B)),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

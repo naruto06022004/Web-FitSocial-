@@ -5,13 +5,37 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use App\Models\User;
 use App\Models\Role;
 
 class AuthController extends Controller
 {
+    private function userPayload(User $u): array
+    {
+        $roleKey = (string) ($u->role ?? 'user');
+        $role = null;
+        try {
+            $role = Role::query()->where('key', $roleKey)->first();
+        } catch (\Throwable) {
+            // If roles table is missing (dev/test), still allow login/me to work.
+            $role = null;
+        }
+
+        return [
+            'id' => $u->id,
+            'name' => $u->name,
+            'email' => $u->email,
+            'role' => $u->role,
+            'role_label' => $role?->label,
+            'permissions' => is_array($role?->permissions) ? $role->permissions : null,
+            'bio' => $u->bio,
+            'gym_name' => $u->gym_name,
+            'avatar_url' => $u->avatar_url,
+        ];
+    }
+
     public function login(Request $request)
     {
         $data = $request->validate([
@@ -37,12 +61,16 @@ class AuthController extends Controller
         if ($roleKey === '') {
             $user->role = 'user';
             $user->save();
-        } elseif (Schema::hasTable('roles')) {
+        } else {
             $knownSystem = in_array($roleKey, ['admin', 'staff'], true);
-            $exists = Role::query()->where('key', $roleKey)->exists();
-            if (! $knownSystem && ! $exists) {
-                $user->role = 'user';
-                $user->save();
+            try {
+                $exists = Role::query()->where('key', $roleKey)->exists();
+                if (! $knownSystem && ! $exists) {
+                    $user->role = 'user';
+                    $user->save();
+                }
+            } catch (\Throwable) {
+                // If roles table is missing, don't block login.
             }
         }
 
@@ -50,12 +78,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'user' => $this->userPayload($user),
         ]);
     }
 
@@ -84,12 +107,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'user' => $this->userPayload($user),
         ]);
     }
 
@@ -102,19 +120,9 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         $u = $request->user();
-        $avatarUrl = Schema::hasColumn('users', 'avatar_url') ? $u->avatar_url : null;
-        $role = Role::query()->where('key', (string) ($u->role ?? 'user'))->first();
         return response()->json([
             'data' => [
-                'id' => $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-                'role' => $u->role,
-                'role_label' => $role?->label,
-                'permissions' => is_array($role?->permissions) ? $role->permissions : null,
-                'bio' => $u->bio,
-                'gym_name' => $u->gym_name,
-                'avatar_url' => $avatarUrl,
+                ...$this->userPayload($u),
             ],
         ]);
     }
@@ -145,19 +153,9 @@ class AuthController extends Controller
         }
         $u->save();
 
-        $role = Role::query()->where('key', (string) ($u->role ?? 'user'))->first();
-        $avatarUrl = Schema::hasColumn('users', 'avatar_url') ? $u->avatar_url : null;
         return response()->json([
             'data' => [
-                'id' => $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-                'role' => $u->role,
-                'role_label' => $role?->label,
-                'permissions' => is_array($role?->permissions) ? $role->permissions : null,
-                'bio' => $u->bio,
-                'gym_name' => $u->gym_name,
-                'avatar_url' => $avatarUrl,
+                ...$this->userPayload($u),
             ],
         ]);
     }

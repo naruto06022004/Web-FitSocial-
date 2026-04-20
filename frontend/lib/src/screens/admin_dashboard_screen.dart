@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../ui/fitnet_layout.dart';
 import '../auth/auth_repository.dart';
 import '../models/fitnet_user.dart';
 import 'admin_posts_screen.dart';
+import 'admin_exercises_screen.dart';
+import 'admin_ranking_screen.dart';
 import 'admin_roles_screen.dart';
 import 'admin_users_screen.dart';
 
@@ -12,11 +15,15 @@ enum _AdminPanelKind {
   users,
   reports,
   posts,
+  exercises,
+  ranking,
   roles;
 
   String? get permissionKey => switch (this) {
         users => 'users_manage',
         posts => 'posts_manage',
+        exercises => 'exercises_manage',
+        ranking => 'ranking_manage',
         roles => 'roles_manage',
         _ => null,
       };
@@ -26,6 +33,8 @@ enum _AdminPanelKind {
         users => 'User Management',
         reports => 'Reports',
         posts => 'Posts',
+        exercises => 'Exercises',
+        ranking => 'Ranking',
         roles => 'Roles',
       };
 
@@ -34,6 +43,8 @@ enum _AdminPanelKind {
         users => Icons.people_alt_outlined,
         reports => Icons.bar_chart_outlined,
         posts => Icons.article_outlined,
+        exercises => Icons.fitness_center_outlined,
+        ranking => Icons.emoji_events_outlined,
         roles => Icons.admin_panel_settings_outlined,
       };
 
@@ -42,6 +53,8 @@ enum _AdminPanelKind {
         users => Icons.people_alt,
         reports => Icons.bar_chart,
         posts => Icons.article,
+        exercises => Icons.fitness_center,
+        ranking => Icons.emoji_events,
         roles => Icons.admin_panel_settings,
       };
 }
@@ -106,6 +119,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return _AdminDashboardHome(
           onOpenUsers: widget.me.hasPermission('users_manage') ? () => _selectPanel(_AdminPanelKind.users) : null,
           onOpenPosts: widget.me.hasPermission('posts_manage') ? () => _selectPanel(_AdminPanelKind.posts) : null,
+          onOpenExercises: widget.me.hasPermission('exercises_manage') ? () => _selectPanel(_AdminPanelKind.exercises) : null,
+          onOpenRanking: widget.me.hasPermission('ranking_manage') ? () => _selectPanel(_AdminPanelKind.ranking) : null,
         );
       case _AdminPanelKind.users:
         return AdminUsersScreen(api: widget.api);
@@ -113,6 +128,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return const _Placeholder(title: 'Reports', subtitle: 'Báo cáo sẽ có sau.');
       case _AdminPanelKind.posts:
         return AdminPostsScreen(api: widget.api);
+      case _AdminPanelKind.exercises:
+        return AdminExercisesScreen(api: widget.api);
+      case _AdminPanelKind.ranking:
+        return AdminRankingScreen(api: widget.api);
       case _AdminPanelKind.roles:
         return AdminRolesScreen(
           api: widget.api,
@@ -187,6 +206,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           _selectPanel(p);
                         },
                       ),
+                    const Divider(height: 18),
+                    ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: const Text('User UI'),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _openUserMode();
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -368,10 +396,14 @@ class _AdminDashboardHome extends StatelessWidget {
   const _AdminDashboardHome({
     this.onOpenUsers,
     this.onOpenPosts,
+    this.onOpenExercises,
+    this.onOpenRanking,
   });
 
   final VoidCallback? onOpenUsers;
   final VoidCallback? onOpenPosts;
+  final VoidCallback? onOpenExercises;
+  final VoidCallback? onOpenRanking;
 
   @override
   Widget build(BuildContext context) {
@@ -453,18 +485,47 @@ class _AdminDashboardHome extends StatelessWidget {
       ]);
     }
 
-    if (onOpenUsers == null && onOpenPosts == null) {
+    if (onOpenExercises != null) {
+      children.addAll([
+        quickCard(
+          icon: Icons.fitness_center_outlined,
+          title: 'Quản lý Exercises',
+          subtitle: 'Mọi bài tập (kể cả tạo từ bài đăng), duyệt và chỉnh MET/coeff',
+          onTap: onOpenExercises!,
+        ),
+        const SizedBox(height: 12),
+      ]);
+    }
+
+    if (onOpenRanking != null) {
+      children.addAll([
+        quickCard(
+          icon: Icons.emoji_events_outlined,
+          title: 'Ranking bài đăng (vote)',
+          subtitle: 'Xếp hạng bài đăng bài tập theo số vote (đồng bộ với app user)',
+          onTap: onOpenRanking!,
+        ),
+        const SizedBox(height: 12),
+      ]);
+    }
+
+    if (onOpenUsers == null && onOpenPosts == null && onOpenExercises == null && onOpenRanking == null) {
       children.add(
         Text(
-          'Bạn không có quyền Users hoặc Posts. Liên hệ Admin để cấp users_manage / posts_manage trong Role.',
+          'Bạn chưa có quyền admin feature. Liên hệ Admin để cấp permissions trong Role.',
           style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
         ),
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: children,
+    return LayoutBuilder(
+      builder: (context, c) {
+        return ListView(
+          padding: FitnetBreakpoints.pagePaddingInsets(c.maxWidth),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: children,
+        );
+      },
     );
   }
 }
@@ -477,13 +538,18 @@ class _Placeholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        Text(subtitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B))),
-      ],
+    return LayoutBuilder(
+      builder: (context, c) {
+        return ListView(
+          padding: FitnetBreakpoints.pagePaddingInsets(c.maxWidth),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text(subtitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B))),
+          ],
+        );
+      },
     );
   }
 }

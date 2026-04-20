@@ -8,6 +8,7 @@ import '../social/components/post_card.dart';
 import '../social/components/right_panel_card.dart';
 import '../social/components/sidebar_item.dart';
 import '../social/components/story_card.dart';
+import 'exercise_post_detail_screen.dart';
 import 'exercise_ranking_cost_screen.dart';
 import 'nearby_gyms_screen.dart';
 import 'note_nodes_screen.dart';
@@ -34,11 +35,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _posts = const [];
+  bool _exerciseOnly = false;
 
   // Local (not persisted) interaction state.
   final Set<int> _liked = <int>{};
   final Map<int, int> _likeCounts = <int, int>{};
-  final Map<int, List<String>> _comments = <int, List<String>>{};
+
+  /// Chỉ dùng layout rộng: thanh scroll vẽ ở mép phải viewport (ngoài khối 3 cột).
+  final ScrollController _wideFeedScrollController = ScrollController();
 
   @override
   void initState() {
@@ -48,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _wideFeedScrollController.dispose();
     super.dispose();
   }
 
@@ -58,7 +63,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final json = await widget.api.getJson('/api/posts');
+      final path = _exerciseOnly ? '/api/posts?kind=exercise' : '/api/posts';
+      final json = await widget.api.getJson(path);
       final data = json['data'];
       final list = (data is List) ? data.cast<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
 
@@ -81,47 +87,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _createPostFromBody(String body) async {
-    final trimmed = body.trim();
-    if (trimmed.isEmpty) return;
-
-    final lines = trimmed.split(RegExp(r'\r?\n'));
-    String title;
-    String? content;
-
-    if (lines.length == 1) {
-      final line = lines.first;
-      if (line.length <= 120) {
-        title = line;
-        content = null;
-      } else {
-        title = line.substring(0, 120);
-        content = line.substring(120);
-      }
-    } else {
-      title = lines.first.length > 120 ? lines.first.substring(0, 120) : lines.first;
-      content = lines.sublist(1).join('\n').trim();
-      if (content.isEmpty) content = null;
+  Future<void> _createPostFromPayload(Map<String, dynamic> payload) async {
+    try {
+      await widget.api.postJson('/api/posts', payload);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã đăng bài')));
+      await _loadPosts();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đăng bài thất bại: ${e.message}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đăng bài thất bại: $e')));
     }
-
-    final payload = <String, dynamic>{'title': title};
-    if (content != null && content.isNotEmpty) {
-      payload['content'] = content;
-    }
-
-    await widget.api.postJson('/api/posts', payload);
-    await _loadPosts();
   }
 
   Future<void> _openComposer() async {
-    final text = await showDialog<String>(
+    final res = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: Colors.black54,
       builder: (ctx) => _CreatePostDialog(me: widget.me),
     );
 
-    if (text != null && text.trim().isNotEmpty && mounted) {
-      await _createPostFromBody(text);
+    if (res != null && mounted) {
+      await _createPostFromPayload(res);
     }
   }
 
@@ -138,8 +127,32 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _openComments(int postId) async {
+  Future<void> _openComments(int postId, {required bool isExercisePost}) async {
+    if (!isExercisePost) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Comment chỉ bật cho bài đăng bài tập.')));
+      return;
+    }
+
     final controller = TextEditingController();
+    List<Map<String, dynamic>> remote = const [];
+    bool loading = true;
+    String? error;
+
+    Future<void> load() async {
+      loading = true;
+      error = null;
+      try {
+        final json = await widget.api.getJson('/api/posts/$postId/comments');
+        final data = json['data'];
+        remote = (data is List) ? data.cast<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
+      } catch (e) {
+        error = e.toString();
+      } finally {
+        loading = false;
+      }
+    }
+
+    await load();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -147,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setStateSheet) {
-            final list = _comments[postId] ?? <String>[];
+            final list = remote;
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
@@ -166,17 +179,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 12),
                     Expanded(
-                      child: list.isEmpty
-                          ? const Center(child: Text('Chưa có bình luận'))
-                          : ListView.builder(
-                              itemCount: list.length,
-                              itemBuilder: (context, i) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text(list[i]),
-                                );
-                              },
-                            ),
+                      child: loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : (error != null
+                              ? Center(child: Text(error!))
+                              : (list.isEmpty
+                                  ? const Center(child: Text('Chưa có bình luận'))
+                                  : ListView.builder(
+                                      itemCount: list.length,
+                                      itemBuilder: (context, i) {
+                                        final c = list[i];
+                                        final body = (c['body'] ?? '').toString();
+                                        final userId = (c['user_id'] ?? '').toString();
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Text(userId.isEmpty ? body : 'User #$userId: $body'),
+                                        );
+                                      },
+                                    ))),
                     ),
                     Row(
                       children: [
@@ -191,16 +211,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(width: 12),
                         FilledButton(
-                          onPressed: () {
+                          onPressed: () async {
                             final text = controller.text.trim();
                             if (text.isEmpty) return;
-                            setState(() {
-                              final existing = _comments[postId] ?? <String>[];
-                              existing.add(text);
-                              _comments[postId] = existing;
-                            });
-                            setStateSheet(() {});
-                            controller.clear();
+                            try {
+                              await widget.api.postJson('/api/posts/$postId/comments', {'body': text});
+                              controller.clear();
+                              await load();
+                              setStateSheet(() {});
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('Gửi failed: $e')));
+                            }
                           },
                           child: const Text('Gửi'),
                         ),
@@ -216,6 +238,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _rateExercisePost(int postId, int stars) async {
+    try {
+      await widget.api.postJson('/api/posts/$postId/rating', {'stars': stars});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã vote $stars sao')));
+      await _loadPosts();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Vote failed: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const fbBg = Color(0xFFF5F7FA);
@@ -225,44 +259,73 @@ class _HomeScreenState extends State<HomeScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 1000;
+          if (wide) {
+            return _buildWideLayout(context, fbBg, constraints);
+          }
           return RefreshIndicator(
             onRefresh: _loadPosts,
-            child: wide
-                ? _buildWideLayout(context, fbBg)
-                : _buildNarrowLayout(context, fbBg),
+            child: _buildNarrowLayout(context, fbBg),
           );
         },
       ),
     );
   }
 
-  Widget _buildWideLayout(BuildContext context, Color fbBg) {
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverToBoxAdapter(
-          child: Align(
+  Widget _buildWideLayout(BuildContext context, Color fbBg, BoxConstraints layoutConstraints) {
+    final viewportH = layoutConstraints.maxHeight.isFinite && layoutConstraints.maxHeight > 0
+        ? layoutConstraints.maxHeight
+        : MediaQuery.sizeOf(context).height;
+
+    return SizedBox(
+      height: viewportH,
+      width: double.infinity,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: FitnetLayout.maxContentWidth),
               child: Padding(
                 padding: FitnetLayout.pagePadding,
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(width: FitnetLayout.leftRailWidth, child: _LeftSidebar(me: widget.me)),
+                    SizedBox(
+                      width: FitnetLayout.leftRailWidth,
+                      child: SingleChildScrollView(
+                        clipBehavior: Clip.hardEdge,
+                        child: _LeftSidebar(me: widget.me, pinnedRail: true),
+                      ),
+                    ),
                     SizedBox(width: FitnetLayout.columnGap),
                     Expanded(
                       flex: 2,
-                      child: _buildFeedColumn(context),
+                      child: RefreshIndicator(
+                        onRefresh: _loadPosts,
+                        child: ScrollConfiguration(
+                          behavior: const _WideHomeScrollBehavior(),
+                          child: CustomScrollView(
+                            controller: _wideFeedScrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              SliverToBoxAdapter(child: _buildFeedColumn(context)),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                     SizedBox(width: FitnetLayout.columnGap),
                     SizedBox(
                       width: FitnetLayout.rightRailWidth,
-                      child: _RightSidebar(
-                        api: widget.api,
-                        me: widget.me,
-                        onOpenNearbyGyms: widget.onOpenNearbyGyms,
+                      child: SingleChildScrollView(
+                        clipBehavior: Clip.hardEdge,
+                        child: _RightSidebar(
+                          api: widget.api,
+                          me: widget.me,
+                          onOpenNearbyGyms: widget.onOpenNearbyGyms,
+                          pinnedRail: true,
+                        ),
                       ),
                     ),
                   ],
@@ -270,8 +333,25 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-        ),
-      ],
+          // Mép ngoài viewport: right âm để thumb nằm ngoài khối 3 cột (Stack clipBehavior: none).
+          Positioned(
+            right: -6,
+            top: 0,
+            bottom: 0,
+            width: 14,
+            child: RawScrollbar(
+              controller: _wideFeedScrollController,
+              thickness: 6,
+              radius: const Radius.circular(3),
+              thumbVisibility: true,
+              child: const ColoredBox(
+                color: Colors.transparent,
+                child: SizedBox.expand(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -280,6 +360,23 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 8,
+            children: [
+              FilterChip(
+                selected: _exerciseOnly,
+                label: const Text('Chỉ bài tập'),
+                onSelected: (v) async {
+                  setState(() => _exerciseOnly = v);
+                  await _loadPosts();
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
         _LeftSidebar(me: widget.me, compact: true),
         const SizedBox(height: 12),
         CreatePostBox(
@@ -319,6 +416,12 @@ class _HomeScreenState extends State<HomeScreen> {
           final userId = p['user_id']?.toString() ?? '';
           final authorLabel = userId.isEmpty ? 'Người dùng' : 'User #$userId';
           final authorAvatarText = (authorLabel.isNotEmpty ? authorLabel[0] : '?');
+          final kind = (p['kind'] ?? 'normal').toString();
+          final isExercisePost = kind == 'exercise';
+          final ex = p['exercise'];
+          final exerciseName = (ex is Map && ex['name'] != null) ? ex['name'].toString().trim() : '';
+          final ratingAvg = (p['rating_avg'] is num) ? (p['rating_avg'] as num).toDouble() : double.tryParse(p['rating_avg']?.toString() ?? '');
+          final ratingCount = int.tryParse(p['rating_count']?.toString() ?? '') ?? 0;
 
           return AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
@@ -331,13 +434,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 timeLabel: timeText.isEmpty ? 'Vừa xong' : timeText,
                 title: p['title']?.toString() ?? '',
                 body: p['content']?.toString() ?? '',
+                badgeLabel: isExercisePost ? 'Bài tập' : null,
+                exerciseName: isExercisePost && exerciseName.isNotEmpty ? exerciseName : null,
+                ratingAvg: isExercisePost ? ratingAvg : null,
+                ratingCount: isExercisePost ? ratingCount : null,
+                onRate: isExercisePost ? (stars) => _rateExercisePost(id, stars) : null,
                 likeCount: _likeCounts[id] ?? 0,
                 liked: _liked.contains(id),
                 onToggleLike: () => _toggleLike(id),
-                onComment: () => _openComments(id),
+                onComment: () => _openComments(id, isExercisePost: isExercisePost),
                 onShare: () {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã chia sẻ (demo)')));
                 },
+                onCardTap: isExercisePost
+                    ? () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ExercisePostDetailScreen(api: widget.api, postId: id),
+                          ),
+                        )
+                    : null,
               ),
             ),
           );
@@ -349,6 +464,23 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 8,
+            children: [
+              FilterChip(
+                selected: _exerciseOnly,
+                label: const Text('Chỉ bài tập'),
+                onSelected: (v) async {
+                  setState(() => _exerciseOnly = v);
+                  await _loadPosts();
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
         CreatePostBox(
           avatarText: (widget.me.name.isNotEmpty ? widget.me.name[0] : '?'),
           placeholder: 'Chia sẻ buổi tập hôm nay của bạn...',
@@ -371,10 +503,12 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _LeftSidebar extends StatelessWidget {
-  const _LeftSidebar({required this.me, this.compact = false});
+  const _LeftSidebar({required this.me, this.compact = false, this.pinnedRail = false});
 
   final FitnetUser me;
   final bool compact;
+  /// Cột trái nằm ngoài feed cuộn: dùng [Column] để bọc trong [SingleChildScrollView] riêng.
+  final bool pinnedRail;
 
   @override
   Widget build(BuildContext context) {
@@ -413,40 +547,50 @@ class _LeftSidebar extends StatelessWidget {
       );
     }
 
+    final railChildren = <Widget>[
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                foregroundColor: theme.colorScheme.primary,
+                child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text(me.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900))),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      SidebarItem(icon: Icons.people_alt_outlined, label: 'Bạn bè', onTap: () => tap('Bạn bè')),
+      const SizedBox(height: 6),
+      SidebarItem(icon: Icons.bookmark_outline, label: 'Đã lưu', onTap: () => tap('Đã lưu')),
+      const SizedBox(height: 6),
+      SidebarItem(icon: Icons.groups_outlined, label: 'Nhóm', onTap: () => tap('Nhóm')),
+      const SizedBox(height: 12),
+      Text('Lối tắt của bạn', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      const SizedBox(height: 6),
+      SidebarItem(icon: Icons.fitness_center, label: 'Fitnet Gym', onTap: () => tap('Fitnet Gym')),
+      const SizedBox(height: 6),
+      SidebarItem(icon: Icons.event_outlined, label: 'Sự kiện tập luyện', onTap: () => tap('Sự kiện tập luyện')),
+    ];
+
+    if (pinnedRail) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: railChildren,
+      );
+    }
+
     return ListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-                  foregroundColor: theme.colorScheme.primary,
-                  child: Text(initial, style: const TextStyle(fontWeight: FontWeight.w900)),
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(me.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900))),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        SidebarItem(icon: Icons.people_alt_outlined, label: 'Bạn bè', onTap: () => tap('Bạn bè')),
-        const SizedBox(height: 6),
-        SidebarItem(icon: Icons.bookmark_outline, label: 'Đã lưu', onTap: () => tap('Đã lưu')),
-        const SizedBox(height: 6),
-        SidebarItem(icon: Icons.groups_outlined, label: 'Nhóm', onTap: () => tap('Nhóm')),
-        const SizedBox(height: 12),
-        Text('Lối tắt của bạn', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 6),
-        SidebarItem(icon: Icons.fitness_center, label: 'Fitnet Gym', onTap: () => tap('Fitnet Gym')),
-        const SizedBox(height: 6),
-        SidebarItem(icon: Icons.event_outlined, label: 'Sự kiện tập luyện', onTap: () => tap('Sự kiện tập luyện')),
-      ],
+      children: railChildren,
     );
   }
 }
@@ -456,11 +600,13 @@ class _RightSidebar extends StatelessWidget {
     required this.api,
     required this.me,
     this.onOpenNearbyGyms,
+    this.pinnedRail = false,
   });
 
   final ApiClient api;
   final FitnetUser me;
   final VoidCallback? onOpenNearbyGyms;
+  final bool pinnedRail;
 
   @override
   Widget build(BuildContext context) {
@@ -471,52 +617,62 @@ class _RightSidebar extends StatelessWidget {
           child: Text(t, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
         );
 
+    final railChildren = <Widget>[
+      sectionTitle('Dành cho bạn'),
+      RightPanelCard(
+        icon: Icons.map_outlined,
+        iconColor: theme.colorScheme.primary,
+        title: 'Phòng tập gần bạn',
+        subtitle: 'Xem bản đồ và phòng gym quanh khu vực',
+        onTap: () {
+          if (onOpenNearbyGyms != null) {
+            onOpenNearbyGyms!();
+          } else {
+            Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('Phòng tập gần bạn')),
+                  body: NearbyGymsScreen(api: api),
+                ),
+              ),
+            );
+          }
+        },
+      ),
+      const SizedBox(height: 10),
+      RightPanelCard(
+        icon: Icons.hub_outlined,
+        iconColor: const Color(0xFF16A34A),
+        title: 'Node học tập',
+        subtitle: 'Lưu ghi chú video, ảnh hoặc chữ',
+        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const NoteNodesScreen())),
+      ),
+      const SizedBox(height: 10),
+      RightPanelCard(
+        icon: Icons.leaderboard_outlined,
+        iconColor: const Color(0xFFDC2626),
+        title: 'Ranking cost bài tập',
+        subtitle: 'Xếp hạng bài tập theo số vote',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ExerciseRankingCostScreen(api: api, me: me),
+          ),
+        ),
+      ),
+    ];
+
+    if (pinnedRail) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: railChildren,
+      );
+    }
+
     return ListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      children: [
-        sectionTitle('Dành cho bạn'),
-        RightPanelCard(
-          icon: Icons.map_outlined,
-          iconColor: theme.colorScheme.primary,
-          title: 'Phòng tập gần bạn',
-          subtitle: 'Xem bản đồ và phòng gym quanh khu vực',
-          onTap: () {
-            if (onOpenNearbyGyms != null) {
-              onOpenNearbyGyms!();
-            } else {
-              Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => Scaffold(
-                    appBar: AppBar(title: const Text('Phòng tập gần bạn')),
-                    body: NearbyGymsScreen(api: api),
-                  ),
-                ),
-              );
-            }
-          },
-        ),
-        const SizedBox(height: 10),
-        RightPanelCard(
-          icon: Icons.hub_outlined,
-          iconColor: const Color(0xFF16A34A),
-          title: 'Node học tập',
-          subtitle: 'Lưu ghi chú video, ảnh hoặc chữ',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const NoteNodesScreen())),
-        ),
-        const SizedBox(height: 10),
-        RightPanelCard(
-          icon: Icons.leaderboard_outlined,
-          iconColor: const Color(0xFFDC2626),
-          title: 'Ranking cost bài tập',
-          subtitle: 'So sánh mức “cost” giữa các bài tập',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ExerciseRankingCostScreen(api: api, me: me),
-            ),
-          ),
-        ),
-      ],
+      children: railChildren,
     );
   }
 }
@@ -586,22 +742,85 @@ class _CreatePostDialog extends StatefulWidget {
 class _CreatePostDialogState extends State<_CreatePostDialog> {
   final _textCtrl = TextEditingController();
   String _privacy = 'Bạn bè cụ thể';
+  bool _isExercisePost = false;
+
+  final _exerciseNameCtrl = TextEditingController();
+  String _exerciseType = 'strength';
+  int _exerciseDifficulty = 2;
+  final _exerciseMetCtrl = TextEditingController();
 
   static const Color _fbBlue = Color(0xFF1877F2);
 
   @override
   void initState() {
     super.initState();
-    _textCtrl.addListener(() => setState(() {}));
+    void refresh() {
+      if (mounted) setState(() {});
+    }
+
+    _textCtrl.addListener(refresh);
+    _exerciseNameCtrl.addListener(refresh);
+    _exerciseMetCtrl.addListener(refresh);
   }
 
   @override
   void dispose() {
     _textCtrl.dispose();
+    _exerciseNameCtrl.dispose();
+    _exerciseMetCtrl.dispose();
     super.dispose();
   }
 
-  bool get _canPost => _textCtrl.text.trim().isNotEmpty;
+  bool get _canPost {
+    if (_textCtrl.text.trim().isEmpty) return false;
+    if (!_isExercisePost) return true;
+    return _exerciseNameCtrl.text.trim().isNotEmpty;
+  }
+
+  Map<String, dynamic> _payloadFromText() {
+    final trimmed = _textCtrl.text.trim();
+    final lines = trimmed.split(RegExp(r'\r?\n'));
+
+    String title;
+    String? content;
+    if (lines.length == 1) {
+      final line = lines.first;
+      if (line.length <= 120) {
+        title = line;
+        content = null;
+      } else {
+        title = line.substring(0, 120);
+        content = line.substring(120);
+      }
+    } else {
+      title = lines.first.length > 120 ? lines.first.substring(0, 120) : lines.first;
+      content = lines.sublist(1).join('\n').trim();
+      if (content.isEmpty) content = null;
+    }
+
+    final payload = <String, dynamic>{
+      'kind': _isExercisePost ? 'exercise' : 'normal',
+      'title': title,
+    };
+    if (content != null && content.isNotEmpty) {
+      payload['content'] = content;
+    }
+
+    if (_isExercisePost) {
+      final met = num.tryParse(_exerciseMetCtrl.text.trim());
+      payload['exercise'] = <String, dynamic>{
+        'name': _exerciseNameCtrl.text.trim(),
+        'type': _exerciseType,
+        'difficulty': _exerciseDifficulty,
+        'met': met,
+      };
+      if (met == null) {
+        (payload['exercise'] as Map<String, dynamic>).remove('met');
+      }
+    }
+
+    return payload;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -700,6 +919,15 @@ class _CreatePostDialogState extends State<_CreatePostDialog> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: 10),
+                          SegmentedButton<bool>(
+                            segments: const [
+                              ButtonSegment(value: false, label: Text('Bài thường'), icon: Icon(Icons.article_outlined)),
+                              ButtonSegment(value: true, label: Text('Bài tập'), icon: Icon(Icons.fitness_center_outlined)),
+                            ],
+                            selected: {_isExercisePost},
+                            onSelectionChanged: (s) => setState(() => _isExercisePost = s.first),
+                          ),
                         ],
                       ),
                     ),
@@ -722,6 +950,71 @@ class _CreatePostDialogState extends State<_CreatePostDialog> {
                   style: theme.textTheme.bodyLarge?.copyWith(fontSize: 22),
                 ),
               ),
+              if (_isExercisePost) ...[
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _exerciseNameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Tên bài tập (bắt buộc)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              initialValue: _exerciseType,
+                              items: const [
+                                DropdownMenuItem(value: 'strength', child: Text('Strength')),
+                                DropdownMenuItem(value: 'cardio', child: Text('Cardio')),
+                                DropdownMenuItem(value: 'hiit', child: Text('HIIT')),
+                                DropdownMenuItem(value: 'bodyweight', child: Text('Bodyweight')),
+                              ],
+                              onChanged: (v) => setState(() => _exerciseType = v ?? 'strength'),
+                              decoration: const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              initialValue: _exerciseDifficulty,
+                              items: const [
+                                DropdownMenuItem(value: 1, child: Text('Dễ (1)')),
+                                DropdownMenuItem(value: 2, child: Text('Vừa (2)')),
+                                DropdownMenuItem(value: 3, child: Text('Khá (3)')),
+                                DropdownMenuItem(value: 4, child: Text('Khó (4)')),
+                                DropdownMenuItem(value: 5, child: Text('Rất khó (5)')),
+                              ],
+                              onChanged: (v) => setState(() => _exerciseDifficulty = v ?? 2),
+                              decoration: const InputDecoration(labelText: 'Độ khó', border: OutlineInputBorder()),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _exerciseMetCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'MET (tuỳ chọn, cardio/hiit)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Bài tập sẽ được gửi để Admin duyệt trước khi xuất hiện trong danh sách bài tập.',
+                        style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Row(
@@ -833,23 +1126,29 @@ class _CreatePostDialogState extends State<_CreatePostDialog> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                 child: SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _canPost ? () => Navigator.pop(context, _textCtrl.text) : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _canPost ? _fbBlue : const Color(0xFFE4E6EB),
-                      foregroundColor: _canPost ? Colors.white : Colors.grey.shade500,
-                      disabledBackgroundColor: const Color(0xFFE4E6EB),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    ),
-                    child: Text(
-                      'Đăng',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _canPost ? Colors.white : Colors.grey.shade500,
-                      ),
-                    ),
+                  child: AnimatedBuilder(
+                    animation: Listenable.merge([_textCtrl, _exerciseNameCtrl, _exerciseMetCtrl]),
+                    builder: (context, _) {
+                      final canPost = _canPost;
+                      return FilledButton(
+                        onPressed: canPost ? () => Navigator.pop(context, _payloadFromText()) : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: canPost ? _fbBlue : const Color(0xFFE4E6EB),
+                          foregroundColor: canPost ? Colors.white : Colors.grey.shade500,
+                          disabledBackgroundColor: const Color(0xFFE4E6EB),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: Text(
+                          'Đăng',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: canPost ? Colors.white : Colors.grey.shade500,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -858,6 +1157,16 @@ class _CreatePostDialogState extends State<_CreatePostDialog> {
         ),
       ),
     );
+  }
+}
+
+/// Tắt scrollbar mặc định của Material (desktop/web) bọc trong [Scrollable] — chỉ dùng [RawScrollbar] ngoài cùng.
+class _WideHomeScrollBehavior extends MaterialScrollBehavior {
+  const _WideHomeScrollBehavior();
+
+  @override
+  Widget buildScrollbar(BuildContext context, Widget child, ScrollableDetails details) {
+    return child;
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../ui/fitnet_layout.dart';
 
 class AdminPostsScreen extends StatefulWidget {
   const AdminPostsScreen({super.key, required this.api});
@@ -63,7 +64,7 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
         return AlertDialog(
           title: const Text('Chỉnh sửa post'),
           content: SizedBox(
-            width: 420,
+            width: (MediaQuery.sizeOf(context).width - 48).clamp(280.0, 420),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -120,16 +121,20 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenW = MediaQuery.sizeOf(context).width;
+    final useCards = FitnetBreakpoints.useAdminCards(screenW);
+    final compactHeader = FitnetBreakpoints.isCompactWidth(screenW);
     final q = _searchCtrl.text.trim().toLowerCase();
 
     final filtered = _items.where((p) {
       final title = (p['title'] ?? '').toString().toLowerCase();
       final content = (p['content'] ?? '').toString().toLowerCase();
-      final type = (p['type'] ?? p['category'] ?? 'Post').toString();
+      final kind = (p['kind'] ?? 'normal').toString().toLowerCase();
+      final typeLabel = kind == 'exercise' ? 'Exercise' : 'Post';
       final status = (p['status'] ?? 'Published').toString();
 
       if (q.isNotEmpty && !(title.contains(q) || content.contains(q))) return false;
-      if (_typeFilter != 'All Types' && type.toLowerCase() != _typeFilter.toLowerCase()) return false;
+      if (_typeFilter != 'All Types' && typeLabel.toLowerCase() != _typeFilter.toLowerCase()) return false;
       if (_statusFilter != 'All Status' && status.toLowerCase() != _statusFilter.toLowerCase()) return false;
       return true;
     }).toList();
@@ -197,6 +202,41 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
     }
 
     Widget pageHeader() {
+      final buttons = Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('Refresh'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export report (demo)')));
+            },
+            icon: const Icon(Icons.file_download_outlined, size: 18),
+            label: const Text('Export Report'),
+          ),
+        ],
+      );
+
+      if (compactHeader) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Post Management', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              'Monitor posts and content moderation',
+              style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 12),
+            buttons,
+          ],
+        );
+      }
+
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -213,30 +253,14 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
               ],
             ),
           ),
-          Wrap(
-            spacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _loading ? null : _load,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Refresh'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export report (demo)')));
-                },
-                icon: const Icon(Icons.file_download_outlined, size: 18),
-                label: const Text('Export Report'),
-              ),
-            ],
-          ),
+          buttons,
         ],
       );
     }
 
     Widget historyCard() {
       final statuses = <String>['All Status', 'Published', 'Hidden', 'Flagged'];
-      final types = <String>['All Types', 'Post'];
+      final types = <String>['All Types', 'Post', 'Exercise'];
 
       final search = TextField(
         controller: _searchCtrl,
@@ -359,13 +383,121 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
                     color: theme.colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
-                      const SizedBox(width: 10),
-                      FilledButton(onPressed: _load, child: const Text('Thử lại')),
-                    ],
-                  ),
+                  child: useCards
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                            const SizedBox(height: 12),
+                            FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                            const SizedBox(width: 10),
+                            FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                          ],
+                        ),
+                )
+              else if (useCards)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Text(
+                          'Không có post phù hợp bộ lọc',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+                        ),
+                      )
+                    else
+                      for (final p in filtered)
+                        Builder(
+                          builder: (context) {
+                            final id = (p['id'] ?? '').toString();
+                            final kindLabel = (p['kind'] ?? 'normal').toString();
+                            final ex = p['exercise'];
+                            final exerciseLabel = (ex is Map && (ex['name'] ?? '').toString().trim().isNotEmpty)
+                                ? (ex['name'] as Object).toString()
+                                : () {
+                                    final eid = int.tryParse(p['exercise_id']?.toString() ?? '') ?? 0;
+                                    return eid > 0 ? 'ID $eid' : '—';
+                                  }();
+                            final title = (p['title'] ?? '(no title)').toString();
+                            final author = (p['user_id'] ?? p['userId'] ?? '').toString();
+                            final likes = asInt(p['like_count'] ?? p['likes'] ?? 0);
+                            final dateText = formatDate(p['created_at'] ?? p['createdAt']);
+                            final status = (p['status'] ?? 'Published').toString();
+
+                            final statusChip = switch (status.toLowerCase()) {
+                              'hidden' => pill('Hidden', bg: const Color(0xFFFEF3C7), fg: const Color(0xFF92400E)),
+                              'flagged' => pill('Flagged', bg: const Color(0xFFFEE2E2), fg: const Color(0xFF991B1B)),
+                              _ => pill('Published', bg: const Color(0xFF0F172A), fg: Colors.white),
+                            };
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            title,
+                                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                                          ),
+                                        ),
+                                        PopupMenuButton<_PostAction>(
+                                          tooltip: 'Actions',
+                                          icon: const Icon(Icons.more_horiz),
+                                          onSelected: (a) async {
+                                            if (a == _PostAction.edit) {
+                                              await _editPost(p);
+                                            } else if (a == _PostAction.delete) {
+                                              await _deletePost(p);
+                                            } else if (a == _PostAction.hide) {
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Hide (demo)')));
+                                            } else if (a == _PostAction.flag) {
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Flag (demo)')));
+                                            }
+                                          },
+                                          itemBuilder: (context) => const [
+                                            PopupMenuItem(value: _PostAction.edit, child: Text('Edit')),
+                                            PopupMenuItem(value: _PostAction.hide, child: Text('Hide (demo)')),
+                                            PopupMenuItem(value: _PostAction.flag, child: Text('Flag (demo)')),
+                                            PopupMenuDivider(),
+                                            PopupMenuItem(value: _PostAction.delete, child: Text('Delete')),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text('ID $id • $kindLabel', style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B))),
+                                    const SizedBox(height: 4),
+                                    Text('Exercise: $exerciseLabel', style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF475569))),
+                                    const SizedBox(height: 4),
+                                    Text('Author: ${author.isEmpty ? '-' : author} • Likes: $likes • $dateText',
+                                        style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B))),
+                                    const SizedBox(height: 10),
+                                    statusChip,
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                  ],
                 )
               else
                 LayoutBuilder(
@@ -399,7 +531,11 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
                                       children: [
                                         headerCell('POST ID', 2),
                                         const SizedBox(width: 12),
-                                        headerCell('TITLE', 4),
+                                        headerCell('KIND', 2),
+                                        const SizedBox(width: 12),
+                                        headerCell('EXERCISE', 3),
+                                        const SizedBox(width: 12),
+                                        headerCell('TITLE', 3),
                                         const SizedBox(width: 12),
                                         headerCell('AUTHOR', 2),
                                         const SizedBox(width: 12),
@@ -430,6 +566,14 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
                                       itemBuilder: (context, i) {
                                         final p = filtered[i];
                                         final id = (p['id'] ?? '').toString();
+                                        final kindLabel = (p['kind'] ?? 'normal').toString();
+                                        final ex = p['exercise'];
+                                        final exerciseLabel = (ex is Map && (ex['name'] ?? '').toString().trim().isNotEmpty)
+                                            ? (ex['name'] as Object).toString()
+                                            : () {
+                                                final eid = int.tryParse(p['exercise_id']?.toString() ?? '') ?? 0;
+                                                return eid > 0 ? 'ID $eid' : '—';
+                                              }();
                                         final title = (p['title'] ?? '(no title)').toString();
                                         final author = (p['user_id'] ?? p['userId'] ?? '').toString();
                                         final likes = asInt(p['like_count'] ?? p['likes'] ?? 0);
@@ -448,13 +592,24 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
                                             children: [
                                               cell(Text(id, overflow: TextOverflow.ellipsis), 2),
                                               const SizedBox(width: 12),
+                                              cell(Text(kindLabel, overflow: TextOverflow.ellipsis), 2),
+                                              const SizedBox(width: 12),
+                                              cell(
+                                                Text(
+                                                  exerciseLabel,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF475569)),
+                                                ),
+                                                3,
+                                              ),
+                                              const SizedBox(width: 12),
                                               cell(
                                                 Text(
                                                   title,
                                                   overflow: TextOverflow.ellipsis,
                                                   style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                                                 ),
-                                                4,
+                                                3,
                                               ),
                                               const SizedBox(width: 12),
                                               cell(Text(author.isEmpty ? '-' : author, overflow: TextOverflow.ellipsis), 2),
@@ -516,7 +671,8 @@ class _AdminPostsScreenState extends State<AdminPostsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: FitnetBreakpoints.pagePaddingInsets(screenW),
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           pageHeader(),
           const SizedBox(height: 14),

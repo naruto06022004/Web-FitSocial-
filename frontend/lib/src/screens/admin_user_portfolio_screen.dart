@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../ui/fitnet_layout.dart';
 
 class AdminUserPortfolioScreen extends StatefulWidget {
   const AdminUserPortfolioScreen({
@@ -437,10 +438,22 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Row(
+      body: LayoutBuilder(
+        builder: (context, c) {
+          final narrow = FitnetBreakpoints.isCompactWidth(c.maxWidth);
+          final pad = FitnetBreakpoints.pagePaddingInsets(c.maxWidth);
+
+          final chips = Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              statChip(icon: Icons.people_alt_outlined, label: 'bạn bè', value: friendsCount.toString()),
+              statChip(icon: Icons.article_outlined, label: 'posts', value: postsCount.toString()),
+              statChip(icon: Icons.photo_library_outlined, label: 'ảnh', value: photos.length.toString()),
+            ],
+          );
+
+          final headerWide = Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
@@ -461,15 +474,7 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
                     const SizedBox(height: 4),
                     Text(email, style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B))),
                     const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        statChip(icon: Icons.people_alt_outlined, label: 'bạn bè', value: friendsCount.toString()),
-                        statChip(icon: Icons.article_outlined, label: 'posts', value: postsCount.toString()),
-                        statChip(icon: Icons.photo_library_outlined, label: 'ảnh', value: photos.length.toString()),
-                      ],
-                    ),
+                    chips,
                   ],
                 ),
               ),
@@ -479,54 +484,101 @@ class _AdminUserPortfolioScreenState extends State<AdminUserPortfolioScreen> {
                 label: const Text('Back'),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          );
+
+          final headerNarrow = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  sectionTitle('Thông tin quản lý'),
-                  const SizedBox(height: 10),
-                  infoRow('User ID', id),
-                  infoRow('Role', roleDisplay),
-                  infoRow('Status', status),
-                  infoRow('Last login', (_user['last_login'] ?? _user['last_login_at'] ?? '').toString()),
-                  const SizedBox(height: 10),
-                  managementActions(),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  sectionTitle('Quyền theo Role'),
-                  const SizedBox(height: 10),
-                  Text(
-                    role == 'admin'
-                        ? 'Admin: toàn quyền (Users/Posts/Settings).'
-                        : role == 'staff'
-                            ? 'Teacher: truy cập dashboard, quản lý posts; giới hạn một số thao tác user.'
-                            : role == 'user'
-                                ? 'Student: chỉ dùng giao diện người dùng.'
-                                : 'Vai trò tùy chỉnh ($role). Quyền cụ thể nằm trong Role Management.',
-                    style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                    foregroundColor: theme.colorScheme.primary,
+                    backgroundImage: avatarUrl.isEmpty ? null : NetworkImage(avatarUrl),
+                    child: avatarUrl.isEmpty
+                        ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w900))
+                        : null,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name.isEmpty ? 'User' : name, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 4),
+                        Text(email, style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B))),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          personalInfoCard(),
-          const SizedBox(height: 12),
-          photosGridCard(),
-        ],
+              const SizedBox(height: 10),
+              chips,
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back, size: 18),
+                label: const Text('Back'),
+              ),
+            ],
+          );
+
+          return ListView(
+            padding: pad,
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              if (narrow) headerNarrow else headerWide,
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      sectionTitle('Thông tin quản lý'),
+                      const SizedBox(height: 10),
+                      infoRow('User ID', id),
+                      infoRow('Role', roleDisplay),
+                      infoRow('Status', status),
+                      infoRow('Last login', (_user['last_login'] ?? _user['last_login_at'] ?? '').toString()),
+                      const SizedBox(height: 10),
+                      managementActions(),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      sectionTitle('Quyền theo Role'),
+                      const SizedBox(height: 10),
+                      Text(
+                        role == 'admin'
+                            ? 'Admin: toàn quyền (Users/Posts/Settings).'
+                            : role == 'staff'
+                                ? 'Teacher: truy cập dashboard, quản lý posts; giới hạn một số thao tác user.'
+                                : role == 'user'
+                                    ? 'Student: chỉ dùng giao diện người dùng.'
+                                    : 'Vai trò tùy chỉnh ($role). Quyền cụ thể nằm trong Role Management.',
+                        style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              personalInfoCard(),
+              const SizedBox(height: 12),
+              photosGridCard(),
+            ],
+          );
+        },
       ),
     );
   }

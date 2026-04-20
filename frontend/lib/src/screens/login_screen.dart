@@ -44,8 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _loading = true);
     try {
-      await widget.authRepository.login(email: _email.text.trim(), password: _password.text);
-      final user = await widget.authRepository.me();
+      final user = await widget.authRepository.login(email: _email.text.trim(), password: _password.text);
       widget.onLoggedIn(user);
     } on ApiException catch (e) {
       DebugLog.add('error', 'login ApiException: ${e.statusCode} ${e.message}', details: e.body);
