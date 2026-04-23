@@ -15,3 +15,12 @@
 # === Toolchains / SDKs (local) ===
 /.tools/
 
+# === Secrets / local keys (never commit) ===
+/key-pem/
+*.pem
+
+# === Local env / credentials ===
+.env
+.env.*
+!.env.example
+

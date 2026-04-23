@@ -11,10 +11,6 @@ class PostCommentController extends Controller
 {
     public function index(Post $post)
     {
-        if (! $post->isExercisePost()) {
-            return response()->json(['message' => 'Comments only available for exercise posts'], 422);
-        }
-
         $rows = PostComment::query()
             ->where('post_id', $post->id)
             ->latest()
@@ -26,10 +22,6 @@ class PostCommentController extends Controller
 
     public function store(Request $request, Post $post)
     {
-        if (! $post->isExercisePost()) {
-            return response()->json(['message' => 'Comments only available for exercise posts'], 422);
-        }
-
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
         ]);
