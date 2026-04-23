@@ -24,3 +24,6 @@
 .env.*
 !.env.example
 
+# === Flutter/Dart tooling (local) ===
+/frontend/devtools_options.yaml
+
