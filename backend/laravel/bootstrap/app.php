@@ -12,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Force JSON negotiation for API routes.
+        $middleware->api(append: [
+            \App\Http\Middleware\ForceJsonForApi::class,
+        ]);
+
         // Route middleware aliases for API routes (Laravel 11/12 style).
         $middleware->alias([
             'ensure.admin' => \App\Http\Middleware\EnsureAdmin::class,
@@ -19,5 +24,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+
+            throw $e;
+        });
     })->create();
